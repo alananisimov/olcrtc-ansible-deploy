@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -41,6 +42,11 @@ var (
 	// ErrUnexpectedFrameSize is returned when the raw frame size does not match expectations.
 	ErrUnexpectedFrameSize = errors.New("unexpected encoder frame size")
 )
+
+// FFmpegPath defines the path to the ffmpeg executable.
+//
+//nolint:gochecknoglobals // operator-controlled config overridden via CLI flag or FFMPEG_BIN env.
+var FFmpegPath = "ffmpeg"
 
 type codecSpec struct {
 	mimeType     string
@@ -102,6 +108,7 @@ func vp9CodecSpec() codecSpec {
 			argCodecVideo, "libvpx-vp9",
 			"-deadline", "realtime",
 			"-cpu-used", "8",
+			"-lag-in-frames", "0",
 			"-error-resilient", "1",
 			"-static-thresh", "0",
 			"-g", "1",
@@ -124,6 +131,7 @@ func vp8CodecSpec() codecSpec {
 			argCodecVideo, codecLibVPX,
 			"-deadline", "realtime",
 			"-cpu-used", "8",
+			"-lag-in-frames", "0",
 			"-error-resilient", "1",
 			"-static-thresh", "0",
 			"-g", "1",
@@ -195,14 +203,25 @@ func newFFmpegEncoder(
 	width, height, fps int,
 	bitrate, hw string,
 ) (*ffmpegEncoder, error) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, ErrFFmpegUnavailable
+	ffmpegBin := FFmpegPath
+	if envBin := os.Getenv("FFMPEG_BIN"); envBin != "" {
+		ffmpegBin = envBin
+	}
+
+	if ffmpegBin == "ffmpeg" {
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return nil, ErrFFmpegUnavailable
+		}
+	} else {
+		if _, err := os.Stat(ffmpegBin); err != nil { //nolint:gosec,lll // G703: ffmpegBin is operator-controlled config, not user input.
+			return nil, fmt.Errorf("%w: %w", ErrFFmpegUnavailable, err)
+		}
 	}
 
 	vcodec := resolveEncoderCodec(spec, hw)
 	args := buildEncoderArgs(spec, vcodec, width, height, fps, bitrate)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...) //nolint:gosec,lll // G204: ffmpeg path is operator-controlled config, not user input
+	cmd := exec.CommandContext(ctx, ffmpegBin, args...) //nolint:gosec,lll // G204: ffmpeg path is operator-controlled config, not user input
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("encoder stdin: %w", err)
@@ -397,14 +416,25 @@ func newFFmpegDecoder(
 	width, height, fps int,
 	hw string,
 ) (*ffmpegDecoder, error) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, ErrFFmpegUnavailable
+	ffmpegBin := FFmpegPath
+	if envBin := os.Getenv("FFMPEG_BIN"); envBin != "" {
+		ffmpegBin = envBin
+	}
+
+	if ffmpegBin == "ffmpeg" {
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return nil, ErrFFmpegUnavailable
+		}
+	} else {
+		if _, err := os.Stat(ffmpegBin); err != nil { //nolint:gosec,lll // G703: ffmpegBin is operator-controlled config, not user input.
+			return nil, fmt.Errorf("%w: %w", ErrFFmpegUnavailable, err)
+		}
 	}
 
 	decoderName := resolveDecoderName(spec, hw)
 	args := buildDecoderArgs(spec, decoderName, width, height, "gray")
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...) //nolint:gosec,lll // G204: ffmpeg path is operator-controlled config, not user input
+	cmd := exec.CommandContext(ctx, ffmpegBin, args...) //nolint:gosec,lll // G204: ffmpeg path is operator-controlled config, not user input
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("decoder stdin: %w", err)
