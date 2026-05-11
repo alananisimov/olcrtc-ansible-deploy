@@ -2,11 +2,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -223,6 +225,27 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	return cfg, nil
 }
 
+// noisyPrefixes lists log prefixes from third-party libs that spam via std log.
+var noisyPrefixes = [][]byte{ //nolint:gochecknoglobals // package-level filter list
+	[]byte("turnc "),
+}
+
+// filteredWriter wraps an io.Writer and drops lines whose prefix matches noisyPrefixes.
+type filteredWriter struct{ w io.Writer }
+
+func (f filteredWriter) Write(p []byte) (int, error) {
+	for _, prefix := range noisyPrefixes {
+		if bytes.Contains(p, prefix) {
+			return len(p), nil
+		}
+	}
+	n, err := f.w.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("log write: %w", err)
+	}
+	return n, nil
+}
+
 func configureLogging(debug bool) {
 	if debug {
 		logger.SetVerbose(true)
@@ -231,6 +254,8 @@ func configureLogging(debug bool) {
 	// Suppress noisy LiveKit/pion logs unless debug is enabled.
 	_ = os.Setenv("PION_LOG_DISABLE", "all")
 	lksdk.SetLogger(protoLogger.GetDiscardLogger())
+	// turnc logs via std log directly — filter it out.
+	log.SetOutput(filteredWriter{w: os.Stderr})
 }
 
 func resolveDataDir(dataDir string) (string, error) {
