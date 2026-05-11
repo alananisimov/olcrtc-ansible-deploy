@@ -86,7 +86,7 @@ Payload не используется.
 
 | URI поле | Параметр / значение |
 |----------|---------------------|
-| `<Carrier>` | `-carrier` |
+| `<Carrier>` | `-auth` |
 | `<Transport>` | `-transport` |
 | payload | соответствующие флаги транспорта |
 | `<RoomID>` | `-id` |
@@ -128,7 +128,7 @@ Payload не нужен - datachannel параметров не имеет.
 
 ```sh
 ./olcrtc -mode cnc \
-  -carrier wbstream \
+  -auth wbstream \
   -transport datachannel \
   -id room-01 \
   -client-id android-01 \
@@ -147,7 +147,7 @@ olcrtc://wbstream?vp8channel<vp8-fps=60&vp8-batch=64>@room-01#d823fa01cb3e0609b6
 
 ```sh
 ./olcrtc -mode cnc \
-  -carrier wbstream \
+  -auth wbstream \
   -transport vp8channel \
   -id room-01 \
   -client-id android-01 \
@@ -167,7 +167,7 @@ olcrtc://jazz?seichannel<fps=60&batch=64&frag=900&ack-ms=2000>@room-01#d823fa01c
 
 ```sh
 ./olcrtc -mode cnc \
-  -carrier jazz \
+  -auth jazz \
   -transport seichannel \
   -id room-01 \
   -client-id android-01 \
@@ -187,7 +187,7 @@ olcrtc://telemost?videochannel<video-w=1080&video-h=1080&video-fps=60&video-bitr
 
 ```sh
 ./olcrtc -mode cnc \
-  -carrier telemost \
+  -auth telemost \
   -transport videochannel \
   -id room-01 \
   -client-id android-01 \

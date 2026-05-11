@@ -82,10 +82,10 @@ cd olcrtc
 ./script/srv.sh --branch=dev --no-cache # ветка dev, без кеша
 ```
 
-### Carrier (на каком сервисе передавать трафик)
+### Auth (на каком сервисе передавать трафик)
 
 ```
-Select carrier:
+Select auth:
   1) telemost
   2) jazz
   3) wbstream

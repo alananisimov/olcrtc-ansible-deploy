@@ -35,7 +35,7 @@
 | Флаг | Что вводить |
 |------|-------------|
 | `-mode` | `srv` на сервере, `cnc` на клиенте, `gen` для генерации Room ID |
-| `-carrier` | `telemost`, `jazz` или `wbstream` |
+| `-auth` | `telemost`, `jazz` или `wbstream` |
 | `-transport` | `datachannel`, `vp8channel`, `seichannel` или `videochannel` |
 | `-id` | Room ID |
 | `-client-id` | Общий идентификатор клиента. Должен совпадать на сервере и клиенте. Один client-id может держать бесконечное количество соединений, но SFU ограничивает полосу на участника - оптимально 1 client-id = 1 пользователь (не обязательно) |
@@ -62,15 +62,15 @@
 
 | Флаг | Описание |
 |------|----------|
-| `-carrier` | `jazz` или `wbstream` |
+| `-auth` | `jazz` или `wbstream` |
 | `-dns` | DNS-сервер |
 | `-amount` | Количество комнат |
 
 ```sh
-./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1
+./olcrtc -mode gen -auth wbstream -dns 1.1.1.1:53 -amount 1
 # abc123xyz
 
-./olcrtc -mode gen -carrier jazz -dns 1.1.1.1:53 -amount 3
+./olcrtc -mode gen -auth jazz -dns 1.1.1.1:53 -amount 3
 # room-id-1
 # room-id-2
 # room-id-3
@@ -159,14 +159,14 @@
 
 ```sh
 # сгенерировать room ID
-ROOM_ID=$(./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data data)
+ROOM_ID=$(./olcrtc -mode gen -auth wbstream -dns 1.1.1.1:53 -amount 1 -data data)
 
 # сервер
-./olcrtc -mode srv -carrier wbstream -transport datachannel \
+./olcrtc -mode srv -auth wbstream -transport datachannel \
   -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53
 
 # клиент
-./olcrtc -mode cnc -carrier wbstream -transport datachannel \
+./olcrtc -mode cnc -auth wbstream -transport datachannel \
   -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
   -socks-host 127.0.0.1 -socks-port 1080
 ```
@@ -175,7 +175,7 @@ ROOM_ID=$(./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data d
 
 ```sh
 # клиент с логином и паролем на прокси
-./olcrtc -mode cnc -carrier wbstream -transport datachannel \
+./olcrtc -mode cnc -auth wbstream -transport datachannel \
   -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
   -socks-host 127.0.0.1 -socks-port 1080 \
   -socks-user myuser -socks-pass mypass
@@ -194,12 +194,12 @@ export all_proxy=socks5h://myuser:mypass@127.0.0.1:1080
 
 ```sh
 # сервер
-./olcrtc -mode srv -carrier telemost -transport vp8channel \
+./olcrtc -mode srv -auth telemost -transport vp8channel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -vp8-fps 60 -vp8-batch 64
 
 # клиент
-./olcrtc -mode cnc -carrier telemost -transport vp8channel \
+./olcrtc -mode cnc -auth telemost -transport vp8channel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -socks-host 127.0.0.1 -socks-port 1080 \
   -vp8-fps 60 -vp8-batch 64
@@ -209,12 +209,12 @@ export all_proxy=socks5h://myuser:mypass@127.0.0.1:1080
 
 ```sh
 # сервер
-./olcrtc -mode srv -carrier telemost -transport seichannel \
+./olcrtc -mode srv -auth telemost -transport seichannel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -fps 60 -batch 64 -frag 900 -ack-ms 2000
 
 # клиент
-./olcrtc -mode cnc -carrier telemost -transport seichannel \
+./olcrtc -mode cnc -auth telemost -transport seichannel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -socks-host 127.0.0.1 -socks-port 1080 \
   -fps 60 -batch 64 -frag 900 -ack-ms 2000
@@ -224,13 +224,13 @@ export all_proxy=socks5h://myuser:mypass@127.0.0.1:1080
 
 ```sh
 # сервер
-./olcrtc -mode srv -carrier telemost -transport videochannel \
+./olcrtc -mode srv -auth telemost -transport videochannel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -video-codec qrcode -video-w 1080 -video-h 1080 \
   -video-fps 60 -video-bitrate 5000k -video-hw none
 
 # клиент
-./olcrtc -mode cnc -carrier telemost -transport videochannel \
+./olcrtc -mode cnc -auth telemost -transport videochannel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -socks-host 127.0.0.1 -socks-port 1080 \
   -video-codec qrcode -video-w 1080 -video-h 1080 \

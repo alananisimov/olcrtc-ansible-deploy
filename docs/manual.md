@@ -166,7 +166,7 @@ CLIENT_ID=default
 Сначала сгенерируй Room ID:
 
 ```sh
-ROOM_ID=$(./build/olcrtc-linux-amd64 -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data data)
+ROOM_ID=$(./build/olcrtc-linux-amd64 -mode gen -auth wbstream -dns 1.1.1.1:53 -amount 1 -data data)
 echo "Room ID: $ROOM_ID"
 ```
 
@@ -177,7 +177,7 @@ echo "Room ID: $ROOM_ID"
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode srv \
-  -carrier wbstream \
+  -auth wbstream \
   -transport datachannel \
   -id "$ROOM_ID" \
   -client-id "$CLIENT_ID" \
@@ -212,7 +212,7 @@ Room ID нужно передать клиенту.
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode cnc \
-  -carrier wbstream \
+  -auth wbstream \
   -transport datachannel \
   -id abc123xyz \
   -client-id "$CLIENT_ID" \
@@ -235,7 +235,7 @@ SOCKS5 server listening on 127.0.0.1:1080
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode cnc \
-  -carrier wbstream \
+  -auth wbstream \
   -transport datachannel \
   -id abc123xyz \
   -client-id "$CLIENT_ID" \
