@@ -31,7 +31,7 @@ fi
 
 mode="${OLCRTC_MODE:-srv}"
 room_id="${OLCRTC_ROOM_ID:-}"
-auth="${OLCRTC_AUTH:-${OLCRTC_CARRIER:-}}"
+auth="${OLCRTC_AUTH:-}"
 transport="${OLCRTC_TRANSPORT:-}"
 link="${OLCRTC_LINK:-direct}"
 data_dir="${OLCRTC_DATA_DIR:-/usr/share/olcrtc}"
