@@ -46,6 +46,8 @@ var (
 	// ErrAuthRequired indicates that no auth provider was selected.
 	ErrAuthRequired = errors.New(
 		"auth provider required (use -auth telemost, -auth jazz, -auth wbstream or -auth none)")
+	// ErrURLRequired indicates that -url must be provided when the auth provider has no default URL.
+	ErrURLRequired = errors.New("SFU URL required (use -url wss://...)")
 	// ErrUnsupportedCarrier indicates that carrier is not registered.
 	ErrUnsupportedCarrier = errors.New("unsupported carrier")
 	// ErrUnsupportedLink indicates that link is not registered.
@@ -149,6 +151,29 @@ func RegisterDefaults() {
 	transport.Register("videochannel", videochannel.New)
 	transport.Register("seichannel", seichannel.New)
 	transport.Register("vp8channel", vp8channel.New)
+}
+
+// ApplyAuthDefaults fills in Engine and URL from the auth provider when they are not set explicitly.
+// For -auth none the fields are left untouched (the caller supplies them directly).
+// Returns an error if the auth provider has no default URL and -url was not given.
+func ApplyAuthDefaults(cfg Config) (Config, error) {
+	if cfg.Auth == authNone || cfg.Auth == "" {
+		return cfg, nil
+	}
+	p, _ := auth.Get(cfg.Auth) // unknown auth is caught later by validateAuth
+	if p == nil {
+		return cfg, nil
+	}
+	if cfg.Engine == "" {
+		cfg.Engine = p.Engine()
+	}
+	if cfg.URL == "" {
+		cfg.URL = p.DefaultServiceURL()
+	}
+	if cfg.URL == "" {
+		return cfg, fmt.Errorf("%w: auth provider %q has no default URL", ErrURLRequired, cfg.Auth)
+	}
+	return cfg, nil
 }
 
 // Validate verifies that the runtime config refers to registered components and all required fields are present.

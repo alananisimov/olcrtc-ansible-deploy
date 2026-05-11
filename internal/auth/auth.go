@@ -53,10 +53,12 @@ type Config struct {
 
 // Provider produces engine credentials.
 type Provider interface {
-	// Engine reports which engine this auth provider feeds. This is what lets
-	// a carrier resolve (auth, engine) pairs consistently — e.g. auth=jazz
-	// always pairs with engine=livekit.
+	// Engine reports which engine this auth provider feeds.
 	Engine() string
+	// DefaultServiceURL returns the well-known service URL for this provider
+	// (e.g. "https://stream.wb.ru"). Returns "" if no default exists — in that
+	// case the caller must supply -url explicitly.
+	DefaultServiceURL() string
 	// Issue obtains credentials for the given room.
 	Issue(ctx context.Context, cfg Config) (Credentials, error)
 }

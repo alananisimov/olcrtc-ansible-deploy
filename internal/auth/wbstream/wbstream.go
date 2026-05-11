@@ -13,6 +13,9 @@ type Provider struct{}
 // Engine reports which engine consumes credentials from this auth provider.
 func (Provider) Engine() string { return "livekit" }
 
+// DefaultServiceURL returns the WB Stream service URL.
+func (Provider) DefaultServiceURL() string { return "https://stream.wb.ru" }
+
 // Issue runs the WB Stream auth flow and returns LiveKit credentials.
 //
 // If cfg.RoomURL is empty or "any", a fresh room is created on the fly —

@@ -16,6 +16,9 @@ type Provider struct{}
 // Engine reports which engine consumes credentials from this auth provider.
 func (Provider) Engine() string { return "goolom" }
 
+// DefaultServiceURL returns the Telemost conference base URL.
+func (Provider) DefaultServiceURL() string { return "https://telemost.yandex.ru" }
+
 // Issue fetches connection info for a Telemost room and returns engine credentials.
 //
 // cfg.RoomURL accepts either a full Telemost conference URL

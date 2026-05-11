@@ -14,6 +14,9 @@ type Provider struct{}
 // Engine reports which engine consumes credentials from this auth provider.
 func (Provider) Engine() string { return "salutejazz" }
 
+// DefaultServiceURL returns the SaluteJazz service URL.
+func (Provider) DefaultServiceURL() string { return "https://bk.salutejazz.ru" }
+
 // Issue runs the SaluteJazz API flow and returns engine credentials.
 //
 // cfg.RoomURL accepts either an empty value (a new room is created on the

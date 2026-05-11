@@ -71,7 +71,8 @@ func registerStubEngineControlled(t *testing.T, name string, stub *stubSession) 
 
 type stubAuth struct{ engineName string }
 
-func (a stubAuth) Engine() string { return a.engineName }
+func (a stubAuth) Engine() string          { return a.engineName }
+func (stubAuth) DefaultServiceURL() string { return "https://stub.example" }
 func (a stubAuth) Issue(_ context.Context, cfg auth.Config) (auth.Credentials, error) {
 	if cfg.RoomURL == "" {
 		return auth.Credentials{}, auth.ErrRoomIDRequired

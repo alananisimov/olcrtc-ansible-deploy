@@ -106,7 +106,15 @@ func runWithConfig(cfg config) error {
 		return runGen(cfg)
 	}
 
-	if err := session.Validate(toSessionConfig(cfg)); err != nil {
+	return runSessionMode(cfg)
+}
+
+func runSessionMode(cfg config) error {
+	scfg, err := session.ApplyAuthDefaults(toSessionConfig(cfg))
+	if err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
+	if err := session.Validate(scfg); err != nil {
 		return fmt.Errorf("validate config: %w", err)
 	}
 
@@ -131,7 +139,7 @@ func runWithConfig(cfg config) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runSession(ctx, toSessionConfig(cfg))
+		errCh <- runSession(ctx, scfg)
 	}()
 
 	select {
@@ -145,7 +153,10 @@ func runWithConfig(cfg config) error {
 }
 
 func execGen(cfg config) error {
-	scfg := toSessionConfig(cfg)
+	scfg, err := session.ApplyAuthDefaults(toSessionConfig(cfg))
+	if err != nil {
+		return fmt.Errorf("validate gen config: %w", err)
+	}
 	if err := session.ValidateGen(scfg); err != nil {
 		return fmt.Errorf("validate gen config: %w", err)
 	}
