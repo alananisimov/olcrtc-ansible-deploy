@@ -184,6 +184,7 @@ func (s *Session) buildAPI() *webrtc.API {
 	if protect.Protector != nil {
 		se.SetICEProxyDialer(protect.NewProxyDialer())
 	}
+	se.LoggerFactory = logger.NewPionLoggerFactory()
 	return webrtc.NewAPI(webrtc.WithSettingEngine(se))
 }
 

@@ -79,6 +79,7 @@ func (s *Session) setupPeerConnections(config webrtc.Configuration) error {
 	if protect.Protector != nil {
 		settingEngine.SetICEProxyDialer(protect.NewProxyDialer())
 	}
+	settingEngine.LoggerFactory = logger.NewPionLoggerFactory()
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
 	var err error

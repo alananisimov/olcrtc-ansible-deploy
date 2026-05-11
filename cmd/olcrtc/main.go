@@ -238,7 +238,7 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 
 // noisyPrefixes lists log prefixes from third-party libs that spam via std log.
 var noisyPrefixes = [][]byte{ //nolint:gochecknoglobals // package-level filter list
-	[]byte("turnc "),
+	[]byte("turnc"), []byte("[turn]"), []byte("Fail to refresh permissions"),
 }
 
 // filteredWriter wraps an io.Writer and drops lines whose prefix matches noisyPrefixes.
