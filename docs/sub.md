@@ -92,8 +92,8 @@ olcrtc://...
 Каждая строка сервера содержит один `olcrtc`-URI в формате из [uri.md](uri.md):
 
 ```text
-olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
-olcrtc://<Carrier>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
+olcrtc://<Auth>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
+olcrtc://<Auth>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 ```
 
 Одна строка = один сервер/одна запись подписки.
@@ -165,4 +165,4 @@ olcrtc://wbstream?datachannel@abc123xyz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 URI-формат для отдельного сервера: [uri.md](uri.md)
 
-Матрица совместимости carrier + transport: [settings.md](settings.md)
+Матрица совместимости auth + transport: [settings.md](settings.md)

@@ -85,7 +85,7 @@ cd olcrtc
 ### Auth (на каком сервисе передавать трафик)
 
 ```
-Select auth:
+Select auth provider:
   1) telemost
   2) jazz
   3) wbstream
@@ -232,11 +232,11 @@ SEI ACK timeout in milliseconds [default: 3000]: 2000
 [+] Server started successfully!
 
 Container name: olcrtc-server
-Carrier:        Carrier
-Transport:      Transport
-Room ID:        Room ID
+Auth:           wbstream
+Transport:      datachannel
+Room ID:        abc123xyz
 Client ID:      default
-Encryption key: Encryption key
+Encryption key: d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799
 ```
 
 **Сохрани Room ID, Client ID и Encryption key** - они нужны для клиента.
@@ -253,7 +253,7 @@ cd olcrtc
 ./script/cnc.sh
 ```
 
-Отвечай на те же вопросы что на сервере - **carrier, transport, room ID и client ID должны совпадать**.
+Отвечай на те же вопросы что на сервере - **auth, transport, room ID и client ID должны совпадать**.
 
 Когда спросит client ID:
 

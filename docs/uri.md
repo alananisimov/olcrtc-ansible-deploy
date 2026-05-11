@@ -19,8 +19,8 @@
 ## Формат
 
 ```text
-olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
-olcrtc://<Carrier>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
+olcrtc://<Auth>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
+olcrtc://<Auth>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 ```
 
 Все поля после `olcrtc://` считаются частью клиентского соглашения.
@@ -33,10 +33,10 @@ olcrtc://<Carrier>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<Cl
 
 | Поле | Значение |
 |------|----------|
-| `<Carrier>` | Имя carrier, например `telemost`, `jazz`, `wbstream` |
+| `<Auth>` | Имя auth-провайдера, например `telemost`, `jazz`, `wbstream` |
 | `<Transport>` | Имя транспорта, например `datachannel`, `vp8channel`, `seichannel`, `videochannel` |
 | payload | Параметры транспорта в `<key=value&...>`. Ключи совпадают с CLI-флагами без дефиса. Блок опускается если используются defaults |
-| `<RoomID>` | Идентификатор комнаты или carrier-specific room URL/ID |
+| `<RoomID>` | Идентификатор комнаты или auth-specific room URL/ID |
 | `<EncryptionKey>` | Ключ шифрования в hex, обычно 64 символа (`32` байта) |
 | `<ClientID>` | Идентификатор клиента. Должен совпадать с ожидаемым значением на сервере. Один client-id может держать бесконечное количество соединений, но SFU ограничивает полосу на участника — оптимально 1 client-id = 1 пользователь (не обязательно) |
 | `<MIMO>` | Свободный комментарий для UI/метаданных, например `RU / olc free sub / IPv6` |
@@ -86,7 +86,7 @@ Payload не используется.
 
 | URI поле | Параметр / значение |
 |----------|---------------------|
-| `<Carrier>` | `-auth` |
+| `<Auth>` | `-auth` |
 | `<Transport>` | `-transport` |
 | payload | соответствующие флаги транспорта |
 | `<RoomID>` | `-id` |
@@ -207,4 +207,4 @@ olcrtc://telemost?videochannel<video-w=1080&video-h=1080&video-fps=60&video-bitr
 
 Формат подписки (список серверов): [sub.md](sub.md)
 
-Матрица совместимости carrier + transport: [settings.md](settings.md)
+Матрица совместимости auth + transport: [settings.md](settings.md)

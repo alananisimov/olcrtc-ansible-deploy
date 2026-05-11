@@ -159,7 +159,7 @@ CLIENT_ID=default
 
 ## Шаг 8: Запустить сервер
 
-На серверной машине (VPS и т.д.). Подбери нужную комбинацию carrier + transport из матрицы в [settings.md](settings.md).
+На серверной машине (VPS и т.д.). Подбери нужную комбинацию auth + transport из матрицы в [settings.md](settings.md).
 
 ### wbstream + datachannel (рекомендуется - максимальная скорость и пинг)
 
@@ -205,7 +205,7 @@ Room ID нужно передать клиенту.
 
 ## Шаг 9: Запустить клиент
 
-На своей машине. Carrier, transport, id, `client-id` и key должны совпадать с сервером.
+На своей машине. Auth, transport, id, `client-id` и key должны совпадать с сервером.
 
 ### wbstream + datachannel
 
