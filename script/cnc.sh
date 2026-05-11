@@ -67,7 +67,7 @@ fi
 
 echo "[+] Using Podman"
 echo ""
-echo "Select carrier:"
+echo "Select auth:"
 echo "  1) telemost"
 echo "  2) jazz"
 echo "  3) wbstream"
@@ -85,7 +85,7 @@ case "$CARRIER_CHOICE" in
         ;;
 esac
 
-echo "[*] Using carrier: $CARRIER"
+echo "[*] Using auth: $CARRIER"
 echo ""
 
 echo "Select transport:"
@@ -284,7 +284,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode cnc -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
+    ./olcrtc -mode cnc -auth "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         -socks-host 0.0.0.0 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}" "${AUTH_ARGS[@]}"
 
@@ -294,7 +294,7 @@ echo ""
 echo "[+] Client started successfully!"
 echo ""
 echo "Container name: $CONTAINER_NAME"
-echo "Carrier:        $CARRIER"
+echo "Auth:           $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"

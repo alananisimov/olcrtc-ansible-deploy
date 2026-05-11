@@ -63,7 +63,7 @@ fi
 
 echo "[+] Using Podman"
 echo ""
-echo "Select carrier:"
+echo "Select auth:"
 echo "  1) telemost"
 echo "  2) jazz"
 echo "  3) wbstream"
@@ -81,7 +81,7 @@ case "$CARRIER_CHOICE" in
         ;;
 esac
 
-echo "[*] Using carrier: $CARRIER"
+echo "[*] Using auth: $CARRIER"
 echo ""
 
 echo "Select transport:"
@@ -307,7 +307,7 @@ if [ "$GEN_ROOM" = "1" ]; then
         -v $WORK_DIR:/app:Z \
         -w /app \
         $IMAGE_NAME \
-        ./olcrtc -mode gen -carrier "$CARRIER" -dns "$DNS" -amount 1 -data data)
+        ./olcrtc -mode gen -auth "$CARRIER" -dns "$DNS" -amount 1 -data data)
     if [ -z "$ROOM_ID" ]; then
         echo "[X] Room generation failed"
         exit 1
@@ -340,7 +340,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode srv -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
+    ./olcrtc -mode srv -auth "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
@@ -353,7 +353,7 @@ echo ""
 echo "[+] Server started successfully!"
 echo ""
 echo "Container name: $CONTAINER_NAME"
-echo "Carrier:        $CARRIER"
+echo "Auth:           $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"
@@ -410,7 +410,7 @@ echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
 echo "Client command:"
-echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
+echo -n "  ./olcrtc -mode cnc -auth \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
 echo ""
 echo -n "    -link direct -transport \"$TRANSPORT\" -dns $DNS -data data \\"
 echo ""

@@ -31,7 +31,7 @@ fi
 
 mode="${OLCRTC_MODE:-srv}"
 room_id="${OLCRTC_ROOM_ID:-}"
-carrier="${OLCRTC_CARRIER:-}"
+auth="${OLCRTC_AUTH:-${OLCRTC_CARRIER:-}}"
 transport="${OLCRTC_TRANSPORT:-}"
 link="${OLCRTC_LINK:-direct}"
 data_dir="${OLCRTC_DATA_DIR:-/usr/share/olcrtc}"
@@ -57,16 +57,16 @@ vp8_fps="${OLCRTC_VP8_FPS:-0}"
 vp8_batch="${OLCRTC_VP8_BATCH:-0}"
 
 [ "$mode" = "srv" ] || die "server image defaults to OLCRTC_MODE=srv; got '$mode'"
-[ -n "$carrier" ] || die "set OLCRTC_CARRIER (e.g. telemost, jazz, wbstream)"
+[ -n "$auth" ] || die "set OLCRTC_AUTH (e.g. telemost, jazz, wbstream)"
 [ -n "$transport" ] || die "set OLCRTC_TRANSPORT (e.g. datachannel, videochannel, seichannel, vp8channel)"
 [ -n "$client_id" ] || die "set OLCRTC_CLIENT_ID to bind the expected client"
 
 if [ -z "$room_id" ]; then
-    case "$carrier" in
+    case "$auth" in
         jazz|wbstream)
             echo "olcrtc-entrypoint: OLCRTC_ROOM_ID not set, generating room via -mode gen..." >&2
-            room_id=$(/usr/local/bin/olcrtc -mode gen -carrier "$carrier" -dns "$dns_server" -amount 1 -data "$data_dir")
-            [ -n "$room_id" ] || die "room generation failed for carrier '$carrier'"
+            room_id=$(/usr/local/bin/olcrtc -mode gen -auth "$auth" -dns "$dns_server" -amount 1 -data "$data_dir")
+            [ -n "$room_id" ] || die "room generation failed for auth '$auth'"
             echo "olcrtc-entrypoint: generated room ID: $room_id" >&2
             ;;
         *)
@@ -97,7 +97,7 @@ esac
 
 set -- /usr/local/bin/olcrtc \
     -mode "$mode" \
-    -carrier "$carrier" \
+    -auth "$auth" \
     -id "$room_id" \
     -client-id "$client_id" \
     -key "$key" \
