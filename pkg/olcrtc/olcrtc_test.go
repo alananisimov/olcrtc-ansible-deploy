@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
 	"github.com/openlibrecommunity/olcrtc/internal/engine"
@@ -18,15 +19,21 @@ const (
 
 // --- stub engine ---
 
-type stubSession struct{ connected bool }
+type stubSession struct {
+	connected  bool
+	onEnded    func(string)
+	watchBlock chan struct{} // closed to unblock WatchConnection
+}
+
+func newStubSession() *stubSession { return &stubSession{watchBlock: make(chan struct{})} }
 
 func (s *stubSession) Connect(_ context.Context) error                  { s.connected = true; return nil }
 func (s *stubSession) Send(_ []byte) error                              { return nil }
 func (s *stubSession) Close() error                                     { return nil }
 func (s *stubSession) SetReconnectCallback(_ func(*webrtc.DataChannel)) {}
 func (s *stubSession) SetShouldReconnect(_ func() bool)                 {}
-func (s *stubSession) SetEndedCallback(_ func(string))                  {}
-func (s *stubSession) WatchConnection(_ context.Context)                {}
+func (s *stubSession) SetEndedCallback(cb func(string))                 { s.onEnded = cb }
+func (s *stubSession) WatchConnection(_ context.Context)                { <-s.watchBlock }
 func (s *stubSession) CanSend() bool                                    { return s.connected }
 func (s *stubSession) GetSendQueue() chan []byte                        { return nil }
 func (s *stubSession) GetBufferedAmount() uint64                        { return 0 }
@@ -38,12 +45,24 @@ var _ engine.Session = (*stubSession)(nil)
 func registerStubEngine(t *testing.T, name string) {
 	t.Helper()
 	engine.Register(name, func(_ context.Context, _ engine.Config) (engine.Session, error) {
-		return &stubSession{}, nil
+		return newStubSession(), nil
 	})
 	t.Cleanup(func() {
-		// Re-register a no-op so subsequent tests don't break.
 		engine.Register(name, func(_ context.Context, _ engine.Config) (engine.Session, error) {
-			return &stubSession{}, nil
+			return newStubSession(), nil
+		})
+	})
+}
+
+// registerStubEngineControlled registers an engine that returns a pre-built stub the test controls.
+func registerStubEngineControlled(t *testing.T, name string, stub *stubSession) {
+	t.Helper()
+	engine.Register(name, func(_ context.Context, _ engine.Config) (engine.Session, error) {
+		return stub, nil
+	})
+	t.Cleanup(func() {
+		engine.Register(name, func(_ context.Context, _ engine.Config) (engine.Session, error) {
+			return newStubSession(), nil
 		})
 	})
 }
@@ -189,6 +208,45 @@ func TestCreateRoom_OK(t *testing.T) {
 	}
 	if roomID == "" {
 		t.Fatal("CreateRoom() returned empty room ID")
+	}
+}
+
+func TestDial_ReadUnblocksOnSessionEnd(t *testing.T) {
+	stub := newStubSession()
+	registerStubEngineControlled(t, "stub-ended", stub)
+
+	sess, err := olcrtc.New(context.Background(), olcrtc.Config{
+		Engine: "stub-ended",
+		URL:    stubURL,
+		Token:  stubToken,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	c, err := sess.Dial(context.Background())
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+
+	readErr := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 4)
+		_, err := c.Read(buf)
+		readErr <- err
+	}()
+
+	// Simulate session ending permanently.
+	stub.onEnded("test reason")
+	close(stub.watchBlock)
+
+	select {
+	case err := <-readErr:
+		if err == nil {
+			t.Fatal("Read() should return error after session ended")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Read() did not unblock after session ended")
 	}
 }
 

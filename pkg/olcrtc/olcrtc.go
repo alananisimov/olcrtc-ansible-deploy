@@ -45,6 +45,8 @@ var (
 	ErrTokenRequired = errors.New("olcrtc: Token required when using direct engine mode")
 	// ErrRoomCreationUnsupported is returned when the auth provider cannot create rooms.
 	ErrRoomCreationUnsupported = errors.New("olcrtc: auth provider does not support room creation")
+	// ErrSessionEnded is returned from Read/Write when the session has ended permanently.
+	ErrSessionEnded = errors.New("olcrtc: session ended")
 )
 
 // Config is the input to [New].
@@ -177,10 +179,16 @@ func newDirect(ctx context.Context, cfg Config) (*Session, error) {
 
 // Dial connects and returns a [net.Conn] backed by the WebRTC data channel.
 // It combines [Session.Connect] + wrapping in a single call.
+// The connection watcher runs in the background for the lifetime of ctx;
+// when the session ends permanently, Read will return an error.
 func (s *Session) Dial(ctx context.Context) (net.Conn, error) {
+	s.inner.SetEndedCallback(func(_ string) {
+		_ = s.pw.CloseWithError(ErrSessionEnded)
+	})
 	if err := s.Connect(ctx); err != nil {
 		return nil, err
 	}
+	go s.inner.WatchConnection(ctx)
 	return &conn{s: s}, nil
 }
 
