@@ -32,10 +32,13 @@ type Capabilities struct {
 
 // Config is the runtime input to an engine factory. URL/Token are produced by
 // an auth provider (or supplied directly by the caller for "none" auth).
+// Extra carries engine-specific fields that don't fit the common shape
+// (e.g. SaluteJazz needs a separate room password alongside the room ID).
 type Config struct {
 	URL       string
 	Token     string
 	Name      string
+	Extra     map[string]string
 	OnData    func([]byte)
 	DNSServer string
 	ProxyAddr string

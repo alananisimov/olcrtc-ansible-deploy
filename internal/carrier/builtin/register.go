@@ -4,11 +4,12 @@ package builtin
 import (
 	"context"
 
+	authSaluteJazz "github.com/openlibrecommunity/olcrtc/internal/auth/salutejazz"
 	authWBStream "github.com/openlibrecommunity/olcrtc/internal/auth/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
-	_ "github.com/openlibrecommunity/olcrtc/internal/engine/livekit" // engine registration via init
+	_ "github.com/openlibrecommunity/olcrtc/internal/engine/livekit"    // engine registration via init
+	_ "github.com/openlibrecommunity/olcrtc/internal/engine/salutejazz" // engine registration via init
 	"github.com/openlibrecommunity/olcrtc/internal/provider"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
 	"github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
 )
 
@@ -17,12 +18,11 @@ type providerFactory func(context.Context, provider.Config) (provider.Provider, 
 // Register wires the built-in carriers into the carrier registry.
 func Register() {
 	// Legacy provider-based carriers (still being migrated to engine+auth).
-	registerProvider("jazz", jazz.New)
 	registerProvider("telemost", telemost.New)
 
-	// Migrated to engine+auth: WB Stream now goes through the LiveKit engine
-	// with the wbstream auth provider.
+	// Migrated to engine+auth.
 	registerEngineAuth("wbstream", authWBStream.Provider{})
+	registerEngineAuth("jazz", authSaluteJazz.Provider{})
 }
 
 func registerProvider(name string, factory providerFactory) {

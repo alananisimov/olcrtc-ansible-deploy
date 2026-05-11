@@ -1,5 +1,4 @@
-// Package jazz implements the SaluteJazz WebRTC provider.
-package jazz
+package salutejazz
 
 import (
 	"encoding/binary"

@@ -18,11 +18,11 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
+	authSaluteJazz "github.com/openlibrecommunity/olcrtc/internal/auth/salutejazz"
 	authWBStream "github.com/openlibrecommunity/olcrtc/internal/auth/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/link"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/pion/webrtc/v4"
 )
@@ -358,11 +358,11 @@ func realRoomURL(ctx context.Context, t *testing.T, carrierName string) string {
 		if *realE2EJazzRoom != "" {
 			return *realE2EJazzRoom
 		}
-		room, err := jazz.CreateRoom(ctx)
+		room, err := authSaluteJazz.Provider{}.CreateRoom(ctx, auth.Config{Name: "olcrtc-e2e-room"})
 		if err != nil {
 			t.Fatalf("create real jazz room: %v", err)
 		}
-		return room.RoomID + ":" + room.Password
+		return room
 	case "telemost":
 		room := *realE2ETelemostRoom
 		if room != "" && !strings.HasPrefix(room, "http://") && !strings.HasPrefix(room, "https://") {

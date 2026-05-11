@@ -1,5 +1,7 @@
-// Package jazz implements the SaluteJazz WebRTC provider.
-package jazz
+// Package salutejazz is the auth provider for the SaluteJazz service. It
+// creates / joins a Jazz room over HTTP and returns the connector
+// WebSocket URL, room ID and password that the salutejazz engine consumes.
+package salutejazz
 
 import (
 	"bytes"
@@ -20,13 +22,13 @@ const (
 	contentTypeJSON   = "application/json"
 )
 
-var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // package-level state intentional
+var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // overridable base URL for tests
 
-// RoomInfo contains connection details for a SaluteJazz room.
-type RoomInfo struct {
-	RoomID       string `json:"roomId"`
-	Password     string `json:"password"`
-	ConnectorURL string `json:"connectorUrl"`
+// roomInfo contains connection details for a SaluteJazz room.
+type roomInfo struct {
+	RoomID       string
+	Password     string
+	ConnectorURL string
 }
 
 var (
@@ -34,14 +36,17 @@ var (
 	errPreconnectFailed = errors.New("preconnect failed")
 )
 
-func createRoom(ctx context.Context) (*RoomInfo, error) {
-	clientID := uuid.New().String()
-	headers := map[string]string{
-		"X-Jazz-ClientId":   clientID,
+func anonymousHeaders() map[string]string {
+	return map[string]string{
+		"X-Jazz-ClientId":   uuid.New().String(),
 		headerAuthType:      authTypeAnonymous,
 		"X-Client-AuthType": authTypeAnonymous,
 		headerContentType:   contentTypeJSON,
 	}
+}
+
+func createRoom(ctx context.Context) (*roomInfo, error) {
+	headers := anonymousHeaders()
 
 	createResp, err := createMeeting(ctx, headers)
 	if err != nil {
@@ -53,16 +58,11 @@ func createRoom(ctx context.Context) (*RoomInfo, error) {
 		return nil, fmt.Errorf("preconnect: %w", err)
 	}
 
-	return &RoomInfo{
+	return &roomInfo{
 		RoomID:       createResp.RoomID,
 		Password:     createResp.Password,
 		ConnectorURL: connectorURL,
 	}, nil
-}
-
-// CreateRoom creates a SaluteJazz room and returns connection details for another peer to join.
-func CreateRoom(ctx context.Context) (*RoomInfo, error) {
-	return createRoom(ctx)
 }
 
 type createResponse struct {
@@ -113,7 +113,6 @@ func createMeeting(ctx context.Context, headers map[string]string) (*createRespo
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("decode create response: %w", err)
 	}
-
 	return &res, nil
 }
 
@@ -168,25 +167,16 @@ func preconnect(ctx context.Context, roomID, password string, headers map[string
 	if err := json.NewDecoder(preResp.Body).Decode(&preconnectResp); err != nil {
 		return "", fmt.Errorf("decode preconnect response: %w", err)
 	}
-
 	return preconnectResp.ConnectorURL, nil
 }
 
-func joinRoom(ctx context.Context, roomID, password string) (*RoomInfo, error) {
-	clientID := uuid.New().String()
-	headers := map[string]string{
-		"X-Jazz-ClientId":   clientID,
-		"X-Jazz-AuthType":   authTypeAnonymous,
-		"X-Client-AuthType": authTypeAnonymous,
-		"Content-Type":      "application/json",
-	}
-
+func joinRoom(ctx context.Context, roomID, password string) (*roomInfo, error) {
+	headers := anonymousHeaders()
 	connectorURL, err := preconnect(ctx, roomID, password, headers)
 	if err != nil {
 		return nil, err
 	}
-
-	return &RoomInfo{
+	return &roomInfo{
 		RoomID:       roomID,
 		Password:     password,
 		ConnectorURL: connectorURL,

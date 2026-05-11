@@ -30,6 +30,7 @@ func registerEngineAuth(carrierName string, authProvider auth.Provider) {
 			URL:       creds.URL,
 			Token:     creds.Token,
 			Name:      cfg.Name,
+			Extra:     creds.Extra,
 			OnData:    cfg.OnData,
 			DNSServer: cfg.DNSServer,
 			ProxyAddr: cfg.ProxyAddr,

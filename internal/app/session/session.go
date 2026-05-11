@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
+	authSaluteJazz "github.com/openlibrecommunity/olcrtc/internal/auth/salutejazz"
 	authWBStream "github.com/openlibrecommunity/olcrtc/internal/auth/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier/builtin"
@@ -16,7 +17,6 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/link/direct"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
@@ -449,14 +449,18 @@ func genRetry(ctx context.Context, fn func(context.Context) error) error {
 func Gen(ctx context.Context, cfg Config, out func(string)) error {
 	switch cfg.Carrier {
 	case carrierJazz:
+		creator, ok := any(authSaluteJazz.Provider{}).(auth.RoomCreator)
+		if !ok {
+			return fmt.Errorf("%w: jazz auth provider does not implement RoomCreator", ErrUnsupportedCarrier)
+		}
 		for i := range cfg.Amount {
 			var roomID string
 			err := genRetry(ctx, func(ctx context.Context) error {
-				info, err := jazz.CreateRoom(ctx)
+				var err error
+				roomID, err = creator.CreateRoom(ctx, auth.Config{Name: names.Generate()})
 				if err != nil {
-					return fmt.Errorf("jazz.CreateRoom: %w", err)
+					return fmt.Errorf("jazz CreateRoom: %w", err)
 				}
-				roomID = info.RoomID
 				return nil
 			})
 			if err != nil {
