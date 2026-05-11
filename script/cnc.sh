@@ -71,17 +71,17 @@ echo "Select auth:"
 echo "  1) telemost"
 echo "  2) jazz"
 echo "  3) wbstream"
-read -p "Enter choice [1-3, default: 1]: " CARRIER_CHOICE
+read -p "Enter choice [1-3, default: 3]: " CARRIER_CHOICE
 
 case "$CARRIER_CHOICE" in
+    1)
+        CARRIER="telemost"
+        ;;
     2)
         CARRIER="jazz"
         ;;
-    3)
-        CARRIER="wbstream"
-        ;;
     *)
-        CARRIER="telemost"
+        CARRIER="wbstream"
         ;;
 esac
 
