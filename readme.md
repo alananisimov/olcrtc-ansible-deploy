@@ -29,7 +29,7 @@ Issues? contact us at [@openlibrecommunity](https://t.me/openlibrecommunity)
 <br>
 Or wait for the release or at least a release
 <br>
-Community android client: [alananisimov/olcbox](https://github.com/alananisimov/olcbox)
+Community ui client: [alananisimov/olcbox](https://github.com/alananisimov/olcbox)
 
 ## Read docs for start 
 
