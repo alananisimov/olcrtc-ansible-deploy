@@ -37,7 +37,7 @@ func TestWBStreamAPIHappyPath(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(createRoomResponse{RoomID: "room"}) //nolint:goconst,lll // test literal, repetition is intentional
 		case "/api-room/api/v1/room/room/join":
 			w.WriteHeader(http.StatusOK)
-		case "/api-room-manager/api/v1/room/room/token":
+		case "/api-room-manager/v2/room/room/connection-details":
 			if r.URL.Query().Get("displayName") != "peer" {
 				t.Fatalf("displayName query = %q", r.URL.Query().Get("displayName"))
 			}
@@ -103,7 +103,7 @@ func TestWBStreamGetRoomToken(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(createRoomResponse{RoomID: "created"})
 		case "/api-room/api/v1/room/created/join":
 			w.WriteHeader(http.StatusOK)
-		case "/api-room-manager/api/v1/room/created/token":
+		case "/api-room-manager/v2/room/created/connection-details":
 			_ = json.NewEncoder(w).Encode(tokenResponse{RoomToken: "token"})
 		default:
 			http.NotFound(w, r)

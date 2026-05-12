@@ -15,7 +15,7 @@ except ImportError:
 logging.getLogger("livekit").setLevel(logging.WARNING)
 
 API_BASE = "https://stream.wb.ru"
-WS_URL = "wss://wbstream01-el.wb.ru:7880"
+WS_URL = "wss://rtc-el-01.wb.ru"
 TEST_MESSAGES = ["Hello WB Stream!", "Hello world", "X" * 100, "Final test"]
 
 def _get_room_token(room_id: str, display_name: str) -> tuple[str, str]:
@@ -24,7 +24,7 @@ def _get_room_token(room_id: str, display_name: str) -> tuple[str, str]:
         "User-Agent": "Mozilla/5.0 (Linux x86_64)",
         "Content-Type": "application/json"
     }
-    
+
     reg_req = requests.post(
         f"{API_BASE}/auth/api/v1/auth/user/guest-register",
         json={"displayName": display_name, "device": {"deviceName": "Linux", "deviceType": "PARTICIPANT_DEVICE_TYPE_WEB_DESKTOP"}},
@@ -32,17 +32,16 @@ def _get_room_token(room_id: str, display_name: str) -> tuple[str, str]:
     )
     reg_req.raise_for_status()
     headers["Authorization"] = f"Bearer {reg_req.json()['accessToken']}"
-    
+
     if not room_id:
         room_req = requests.post(f"{API_BASE}/api-room/api/v2/room", json={"roomType": "ROOM_TYPE_ALL_ON_SCREEN", "roomPrivacy": "ROOM_PRIVACY_FREE"}, headers=headers)
         room_req.raise_for_status()
         room_id = room_req.json()["roomId"]
-        
+
     requests.post(f"{API_BASE}/api-room/api/v1/room/{room_id}/join", json={}, headers=headers).raise_for_status()
-    tok_req = requests.get(f"{API_BASE}/api-room-manager/api/v1/room/{room_id}/token", params={"deviceType": "PARTICIPANT_DEVICE_TYPE_WEB_DESKTOP", "displayName": display_name}, headers=headers)
+    tok_req = requests.get(f"{API_BASE}/api-room-manager/v2/room/{room_id}/connection-details", params={"deviceType": "PARTICIPANT_DEVICE_TYPE_WEB_DESKTOP", "displayName": display_name}, headers=headers)
     tok_req.raise_for_status()
     return room_id, tok_req.json()["roomToken"]
-
 async def run_poc() -> dict:
     """Runs the complete PoC flow."""
     print("\n--- WB Stream PoC ---")
