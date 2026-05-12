@@ -17,12 +17,12 @@ import (
 
 const (
 	authTypeAnonymous = "ANONYMOUS"
-	headerAuthType    = "X-Jazz-Authtype"
+	headerAuthType    = "X-Jazz-AuthType"
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
 )
 
-var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // overridable base URL for tests
+var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // package-level state intentional
 
 // roomInfo contains connection details for a SaluteJazz room.
 type roomInfo struct {

@@ -16,9 +16,9 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-const wsURL = "wss://wbstream01-el.wb.ru:7880"
+const wsURL = "wss://rtc-el-01.wb.ru"
 
-var apiBase = "https://stream.wb.ru" //nolint:gochecknoglobals // overridable base URL for tests
+var apiBase = "https://stream.wb.ru" //nolint:gochecknoglobals // package-level state intentional
 
 var (
 	errGuestRegister = errors.New("guest register failed")
