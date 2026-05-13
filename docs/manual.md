@@ -75,14 +75,6 @@ go version
 # go version go1.26.x linux/amd64
 ```
 
-### Шаг 2.5: swap (ОЗУ)
-
-Проекту нужно минимум 2-4ГБ ОЗУ для сборки. Если памяти мало, **включите SWAP**:
-
-```bash
-sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-```
-
 ---
 
 ## Шаг 3: Установить mage
@@ -167,25 +159,22 @@ CLIENT_ID=default
 
 ## Шаг 8: Запустить сервер
 
-На серверной машине (VPS и т.д.). Подбери нужную комбинацию auth + transport из матрицы в [settings.md](settings.md).
+На серверной машине (VPS и т.д.). Подбери нужную комбинацию carrier + transport из матрицы в [settings.md](settings.md).
 
 ### wbstream + datachannel (рекомендуется - максимальная скорость и пинг)
 
-Сначала сгенерируй Room ID:
+Сначала создай руму вручную через сайт [wbstream](https://stream.wb.ru) (автогенерация через `-mode gen` для wbstream больше не поддерживается) и сохрани её ID:
 
 ```sh
-ROOM_ID=$(./build/olcrtc-linux-amd64 -mode gen -auth wbstream -dns 1.1.1.1:53 -amount 1 -data data)
-echo "Room ID: $ROOM_ID"
+ROOM_ID="<room-id-со-stream.wb.ru>"
 ```
-
-Или создай руму вручную через сайт [wbstream](https://stream.wb.ru).
 
 Затем запусти сервер:
 
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode srv \
-  -auth wbstream \
+  -carrier wbstream \
   -transport datachannel \
   -id "$ROOM_ID" \
   -client-id "$CLIENT_ID" \
@@ -213,14 +202,14 @@ Room ID нужно передать клиенту.
 
 ## Шаг 9: Запустить клиент
 
-На своей машине. Auth, transport, id, `client-id` и key должны совпадать с сервером.
+На своей машине. Carrier, transport, id, `client-id` и key должны совпадать с сервером.
 
 ### wbstream + datachannel
 
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode cnc \
-  -auth wbstream \
+  -carrier wbstream \
   -transport datachannel \
   -id abc123xyz \
   -client-id "$CLIENT_ID" \
@@ -243,7 +232,7 @@ SOCKS5 server listening on 127.0.0.1:1080
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode cnc \
-  -auth wbstream \
+  -carrier wbstream \
   -transport datachannel \
   -id abc123xyz \
   -client-id "$CLIENT_ID" \

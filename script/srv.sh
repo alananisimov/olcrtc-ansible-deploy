@@ -63,25 +63,25 @@ fi
 
 echo "[+] Using Podman"
 echo ""
-echo "Select auth provider:"
+echo "Select carrier:"
 echo "  1) telemost"
 echo "  2) jazz"
 echo "  3) wbstream"
-read -p "Enter choice [1-3, default: 3]: " AUTH_CHOICE
+read -p "Enter choice [1-3, default: 3]: " CARRIER_CHOICE
 
-case "$AUTH_CHOICE" in
+case "$CARRIER_CHOICE" in
     1)
-        AUTH="telemost"
+        CARRIER="telemost"
         ;;
     2)
-        AUTH="jazz"
+        CARRIER="jazz"
         ;;
     *)
-        AUTH="wbstream"
+        CARRIER="wbstream"
         ;;
 esac
 
-echo "[*] Using auth: $AUTH"
+echo "[*] Using carrier: $CARRIER"
 echo ""
 
 echo "Select transport:"
@@ -111,7 +111,7 @@ echo ""
 
 GEN_ROOM=0
 
-if [ "$AUTH" = "jazz" ] || [ "$AUTH" = "wbstream" ]; then
+if [ "$CARRIER" = "jazz" ]; then
     echo "Room options:"
     echo "  1) Auto-generate new room (recommended)"
     echo "  2) Use specific room ID"
@@ -145,14 +145,7 @@ CLIENT_ID=${CLIENT_ID_INPUT:-default}
 
 echo ""
 read -p "DNS server [default: 8.8.8.8:53]: " DNS_INPUT
-DNS_RAW=${DNS_INPUT:-8.8.8.8:53}
-
-# Map 127.0.0.1 to host.containers.internal for container access
-DNS="$DNS_RAW"
-if [[ "$DNS_RAW" == "127.0.0.1"* ]] || [[ "$DNS_RAW" == "localhost"* ]]; then
-    DNS="${DNS_RAW/127.0.0.1/host.containers.internal}"
-    DNS="${DNS/localhost/host.containers.internal}"
-fi
+DNS=${DNS_INPUT:-8.8.8.8:53}
 
 echo ""
 read -p "Use SOCKS5 proxy for egress? (y/N): " USE_PROXY
@@ -167,13 +160,7 @@ if [[ "$USE_PROXY" =~ ^[Yy]$ ]]; then
     SOCKS_PROXY_PORT=${PROXY_PORT_INPUT:-1080}
 
     echo "[*] Will use SOCKS5 proxy: $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
-    
-    # Map 127.0.0.1 to host.containers.internal for container access
-    INTERNAL_PROXY_ADDR="$SOCKS_PROXY_ADDR"
-    if [[ "$SOCKS_PROXY_ADDR" == "127.0.0.1" ]] || [[ "$SOCKS_PROXY_ADDR" == "localhost" ]]; then
-        INTERNAL_PROXY_ADDR="host.containers.internal"
-    fi
-    EXTRA_ARGS+=(-socks-proxy "$INTERNAL_PROXY_ADDR" -socks-proxy-port "$SOCKS_PROXY_PORT")
+    EXTRA_ARGS+=(-socks-proxy "$SOCKS_PROXY_ADDR" -socks-proxy-port "$SOCKS_PROXY_PORT")
 fi
 
 TRANSPORT_ARGS=()
@@ -322,7 +309,7 @@ if [ "$GEN_ROOM" = "1" ]; then
         -v $WORK_DIR:/app:Z \
         -w /app \
         $IMAGE_NAME \
-        ./olcrtc -mode gen -auth "$AUTH" -dns "$DNS" -amount 1 -data data)
+        ./olcrtc -mode gen -carrier "$CARRIER" -dns "$DNS" -amount 1 -data data)
     if [ -z "$ROOM_ID" ]; then
         echo "[X] Room generation failed"
         exit 1
@@ -352,12 +339,11 @@ echo "[*] Starting OlcRTC server..."
 podman run -d \
     --network host \
     --name $CONTAINER_NAME \
-    --add-host=host.containers.internal:host-gateway \
     --restart unless-stopped \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode srv -auth "$AUTH" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
+    ./olcrtc -mode srv -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
@@ -370,7 +356,7 @@ echo ""
 echo "[+] Server started successfully!"
 echo ""
 echo "Container name: $CONTAINER_NAME"
-echo "Auth:           $AUTH"
+echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"
@@ -392,7 +378,7 @@ elif [ "$TRANSPORT" = "videochannel" ]; then
     fi
 fi
 
-OLC_URI="olcrtc://$AUTH?${TRANSPORT}${TRANSPORT_PAYLOAD}@$ROOM_ID#$KEY%$CLIENT_ID\$$sub_configname"
+OLC_URI="olcrtc://$CARRIER?${TRANSPORT}${TRANSPORT_PAYLOAD}@$ROOM_ID#$KEY%$CLIENT_ID\$$sub_configname"
 echo "uri: $OLC_URI"
 echo ""
 
@@ -427,7 +413,7 @@ echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
 echo "Client command:"
-echo -n "  ./olcrtc -mode cnc -auth \"$AUTH\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
+echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
 echo ""
 echo -n "    -link direct -transport \"$TRANSPORT\" -dns $DNS -data data \\"
 echo ""
