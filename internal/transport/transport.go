@@ -41,7 +41,7 @@ type Config struct {
 	Engine          string
 	URL             string
 	Token           string
-	ClientID        string
+	DeviceID        string
 	Name            string
 	OnData          func([]byte)
 	DNSServer       string

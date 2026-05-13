@@ -47,10 +47,9 @@ func TestSmuxConfig(t *testing.T) {
 
 func TestParseConnectRequest(t *testing.T) {
 	buf, err := json.Marshal(ConnectRequest{
-		Cmd:      "connect",
-		ClientID: "client-1", //nolint:goconst // test literal, repetition is intentional
-		Addr:     "example.com", //nolint:goconst // test literal, repetition is intentional
-		Port:     443,
+		Cmd:  "connect",
+		Addr: "example.com", //nolint:goconst // test literal, repetition is intentional
+		Port: 443,
 	})
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
@@ -60,7 +59,7 @@ func TestParseConnectRequest(t *testing.T) {
 	if !ok {
 		t.Fatal("parseConnectRequest() returned ok=false")
 	}
-	if req.ClientID != "client-1" || req.Addr != "example.com" || req.Port != 443 {
+	if req.Addr != "example.com" || req.Port != 443 {
 		t.Fatalf("parseConnectRequest() = %+v", req)
 	}
 
@@ -72,13 +71,13 @@ func TestParseConnectRequest(t *testing.T) {
 	}
 }
 
-func TestAuthorizeRequest(t *testing.T) {
-	s := &Server{clientID: "client-1"}
-	if !s.authorizeRequest(ConnectRequest{ClientID: "client-1"}) {
-		t.Fatal("authorizeRequest() rejected valid client")
+func TestDefaultAuthHook(t *testing.T) {
+	sid, err := defaultAuthHook("dev", map[string]any{"x": 1})
+	if err != nil {
+		t.Fatalf("defaultAuthHook() err = %v", err)
 	}
-	if s.authorizeRequest(ConnectRequest{ClientID: "client-2"}) {
-		t.Fatal("authorizeRequest() accepted wrong client")
+	if sid == "" {
+		t.Fatal("defaultAuthHook() returned empty session id")
 	}
 }
 
@@ -301,7 +300,7 @@ func TestSocks5ConnectTruncatesLongDomain(t *testing.T) {
 	}
 }
 
-func TestHandleStreamRejectsWrongClientID(t *testing.T) {
+func TestHandleStreamDispatchAfterConnect(t *testing.T) {
 	a, b := net.Pipe()
 	defer func() {
 		_ = a.Close()
@@ -323,7 +322,7 @@ func TestHandleStreamRejectsWrongClientID(t *testing.T) {
 	go func() {
 		stream, err := serverSess.AcceptStream()
 		if err == nil {
-			(&Server{clientID: "expected"}).handleStream(context.Background(), stream)
+			(&Server{}).handleStream(context.Background(), stream)
 		}
 		close(done)
 	}()
@@ -333,10 +332,9 @@ func TestHandleStreamRejectsWrongClientID(t *testing.T) {
 		t.Fatalf("OpenStream() error = %v", err)
 	}
 	req, err := json.Marshal(ConnectRequest{
-		Cmd:      "connect",
-		ClientID: "wrong",
-		Addr:     "example.com",
-		Port:     443,
+		Cmd:  "connect",
+		Addr: "127.0.0.1",
+		Port: 1, // unreachable port — dispatch will fail dial and exit
 	})
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)

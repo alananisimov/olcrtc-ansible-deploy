@@ -10,10 +10,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
@@ -44,15 +49,18 @@ var (
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
 type Client struct {
-	ln        link.Link
-	cipher    *crypto.Cipher
-	conn      *muxconn.Conn
-	session   *smux.Session
-	sessMu    sync.RWMutex
-	clientID  string
-	dnsServer string
-	socksUser string
-	socksPass string
+	ln           link.Link
+	cipher       *crypto.Cipher
+	conn         *muxconn.Conn
+	session      *smux.Session
+	controlStrm  *smux.Stream
+	sessMu       sync.RWMutex
+	deviceID     string
+	sessionID    string
+	claims       map[string]any
+	dnsServer    string
+	socksUser    string
+	socksPass    string
 }
 
 // Config holds runtime configuration for [Run] and [RunWithReady].
@@ -62,7 +70,6 @@ type Config struct {
 	Carrier         string
 	RoomURL         string
 	KeyHex          string
-	ClientID        string
 	LocalAddr       string
 	DNSServer       string
 	SOCKSUser       string
@@ -86,6 +93,19 @@ type Config struct {
 	Engine          string
 	URL             string
 	Token           string
+
+	// DeviceID overrides the persistent client-side device identifier. Leave
+	// empty to derive one from DeviceIDPath (or generate a random one if both
+	// are empty).
+	DeviceID string
+
+	// DeviceIDPath is a file in which to persist the auto-generated device ID
+	// across restarts. Ignored when DeviceID is set explicitly.
+	DeviceIDPath string
+
+	// Claims is sent to the server in CLIENT_HELLO and forwarded verbatim to
+	// the server's AuthHook. Free-form key/value bag for plan, user, region, etc.
+	Claims map[string]any
 }
 
 // Run starts the client with the given configuration.
@@ -103,9 +123,15 @@ func RunWithReady(ctx context.Context, cfg Config, onReady func()) error {
 		return fmt.Errorf("setupCipher failed: %w", err)
 	}
 
+	deviceID, err := resolveDeviceID(cfg.DeviceID, cfg.DeviceIDPath)
+	if err != nil {
+		return fmt.Errorf("resolve device id: %w", err)
+	}
+
 	c := &Client{
 		cipher:    cipher,
-		clientID:  cfg.ClientID,
+		deviceID:  deviceID,
+		claims:    cfg.Claims,
 		dnsServer: cfg.DNSServer,
 		socksUser: cfg.SOCKSUser,
 		socksPass: cfg.SOCKSPass,
@@ -147,7 +173,7 @@ func (c *Client) bringUpLink(
 		Engine:          cfg.Engine,
 		URL:             cfg.URL,
 		Token:           cfg.Token,
-		ClientID:        c.clientID,
+		DeviceID:        c.deviceID,
 		Name:            names.Generate(),
 		OnData:          c.onData,
 		DNSServer:       cfg.DNSServer,
@@ -188,12 +214,78 @@ func (c *Client) bringUpLink(
 	if err != nil {
 		return fmt.Errorf("smux client: %w", err)
 	}
+
+	control, sid, err := openControlStream(sess, c.deviceID, c.claims)
+	if err != nil {
+		_ = sess.Close()
+		_ = c.conn.Close()
+		return fmt.Errorf("handshake: %w", err)
+	}
+	logger.Infof("session %s opened (device=%s)", sid, c.deviceID)
+
 	c.sessMu.Lock()
 	c.session = sess
+	c.controlStrm = control
+	c.sessionID = sid
 	c.sessMu.Unlock()
 
 	go ln.WatchConnection(ctx)
 	return nil
+}
+
+// openControlStream opens stream #1 on sess and performs the handshake.
+// The stream stays open for the lifetime of the smux session — the server
+// holds it parked, and it would carry future control messages.
+func openControlStream(
+	sess *smux.Session,
+	deviceID string,
+	claims map[string]any,
+) (*smux.Stream, string, error) {
+	stream, err := sess.OpenStream()
+	if err != nil {
+		return nil, "", fmt.Errorf("open control stream: %w", err)
+	}
+	_ = stream.SetDeadline(time.Now().Add(handshake.DefaultTimeout))
+	sid, err := handshake.Client(stream, deviceID, claims)
+	_ = stream.SetDeadline(time.Time{})
+	if err != nil {
+		_ = stream.Close()
+		return nil, "", err
+	}
+	return stream, sid, nil
+}
+
+// resolveDeviceID returns the device ID to send in CLIENT_HELLO.
+//
+// Precedence:
+//  1. Explicit deviceID arg (Config.DeviceID) — used verbatim.
+//  2. Persistent file at path (Config.DeviceIDPath) — read if it exists,
+//     otherwise generated and written for future runs.
+//  3. Random UUID per run when both inputs are empty.
+func resolveDeviceID(deviceID, path string) (string, error) {
+	if deviceID != "" {
+		return deviceID, nil
+	}
+	if path == "" {
+		return uuid.NewString(), nil
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+		if id != "" {
+			return id, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("read device id %s: %w", path, err)
+	}
+	id := uuid.NewString()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", fmt.Errorf("mkdir device id dir: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write device id %s: %w", path, err)
+	}
+	return id, nil
 }
 
 // smuxConfig returns the tuned smux config used on both ends.
@@ -212,6 +304,10 @@ func smuxConfig() *smux.Config {
 func (c *Client) handleReconnect() {
 	logger.Infof("client link reconnect - tearing down smux session")
 	c.sessMu.Lock()
+	if c.controlStrm != nil {
+		_ = c.controlStrm.Close()
+		c.controlStrm = nil
+	}
 	if c.session != nil {
 		_ = c.session.Close()
 		c.session = nil
@@ -220,6 +316,7 @@ func (c *Client) handleReconnect() {
 		_ = c.conn.Close()
 		c.conn = nil
 	}
+	c.sessionID = ""
 	c.sessMu.Unlock()
 	c.conn = muxconn.New(c.ln, c.cipher)
 	sess, err := smux.Client(c.conn, smuxConfig())
@@ -227,13 +324,25 @@ func (c *Client) handleReconnect() {
 		logger.Warnf("smux re-init failed: %v", err)
 		return
 	}
+	control, sid, err := openControlStream(sess, c.deviceID, c.claims)
+	if err != nil {
+		logger.Warnf("handshake on reconnect failed: %v", err)
+		_ = sess.Close()
+		return
+	}
+	logger.Infof("session %s reopened (device=%s)", sid, c.deviceID)
 	c.sessMu.Lock()
 	c.session = sess
+	c.controlStrm = control
+	c.sessionID = sid
 	c.sessMu.Unlock()
 }
 
 func (c *Client) shutdown() {
 	c.sessMu.Lock()
+	if c.controlStrm != nil {
+		_ = c.controlStrm.Close()
+	}
 	if c.session != nil {
 		_ = c.session.Close()
 	}
@@ -340,10 +449,9 @@ func (c *Client) tunnel(conn net.Conn, sess *smux.Session, targetAddr string, ta
 
 func (c *Client) sendConnectRequest(stream *smux.Stream, targetAddr string, targetPort int) error {
 	connectReq, err := json.Marshal(map[string]any{
-		"cmd":      "connect",
-		"clientId": c.clientID,
-		"addr":     targetAddr,
-		"port":     targetPort,
+		"cmd":  "connect",
+		"addr": targetAddr,
+		"port": targetPort,
 	})
 	if err != nil {
 		return fmt.Errorf("sid=%d marshal connect req: %w", stream.ID(), err)

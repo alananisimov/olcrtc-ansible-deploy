@@ -400,7 +400,6 @@ func validSessionConfig(mode, carrierName, transportName string) session.Config 
 		Transport:       transportName,
 		Auth:            carrierName,
 		RoomID:          "room",
-		ClientID:        "client-1",
 		KeyHex:          testKeyHex,
 		SOCKSHost:       "127.0.0.1",
 		SOCKSPort:       1080,
@@ -428,7 +427,7 @@ func validLinkConfig(carrierName, transportName string) link.Config {
 		Transport:       cfg.Transport,
 		Carrier:         cfg.Auth,
 		RoomURL:         "room",
-		ClientID:        cfg.ClientID,
+		DeviceID:        "e2e-link-test",
 		Name:            "e2e-" + carrierName + "-" + transportName,
 		DNSServer:       cfg.DNSServer,
 		VideoWidth:      cfg.VideoWidth,
@@ -505,7 +504,7 @@ type tunnelRuntime struct {
 	clientErr chan error
 }
 
-func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRuntime {
+func startTunnel(t *testing.T, deviceID, _ string) *tunnelRuntime {
 	t.Helper()
 
 	carrierName, room := registerMemoryCarrier(t)
@@ -521,7 +520,6 @@ func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRun
 			Carrier:   carrierName,
 			RoomURL:   "room",
 			KeyHex:    testKeyHex,
-			ClientID:  serverClientID,
 			DNSServer: "127.0.0.1:53",
 		})
 	}()
@@ -536,7 +534,7 @@ func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRun
 			Carrier:   carrierName,
 			RoomURL:   "room",
 			KeyHex:    testKeyHex,
-			ClientID:  clientClientID,
+			DeviceID:  deviceID,
 			LocalAddr: socksAddr,
 			DNSServer: "127.0.0.1:53",
 		}, func() { close(ready) })
@@ -555,7 +553,7 @@ func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRun
 func startRealTunnel(
 	ctx context.Context,
 	t *testing.T,
-	carrierName, transportName, roomURL, serverClientID, clientClientID string,
+	carrierName, transportName, roomURL, _, clientDeviceID string,
 ) (*tunnelRuntime, error) {
 	t.Helper()
 
@@ -573,7 +571,6 @@ func startRealTunnel(
 			Carrier:         carrierName,
 			RoomURL:         roomURL,
 			KeyHex:          testKeyHex,
-			ClientID:        serverClientID,
 			DNSServer:       "127.0.0.1:53",
 			VideoWidth:      1080,
 			VideoHeight:     1080,
@@ -613,7 +610,7 @@ func startRealTunnel(
 			Carrier:         carrierName,
 			RoomURL:         roomURL,
 			KeyHex:          testKeyHex,
-			ClientID:        clientClientID,
+			DeviceID:        clientDeviceID,
 			LocalAddr:       socksAddr,
 			DNSServer:       "127.0.0.1:53",
 			VideoWidth:      1080,
@@ -747,49 +744,6 @@ func connectViaSOCKS(t *testing.T, socksAddr, targetAddr string) net.Conn {
 	}
 
 	return conn
-}
-
-func connectViaSOCKSExpectFailure(t *testing.T, socksAddr, targetAddr string) []byte {
-	t.Helper()
-
-	dialer := net.Dialer{Timeout: 2 * time.Second}
-	conn, err := dialer.DialContext(context.Background(), "tcp4", socksAddr)
-	if err != nil {
-		t.Fatalf("dial socks: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	if _, err := conn.Write([]byte{5, 1, 0}); err != nil {
-		t.Fatalf("write socks greeting: %v", err)
-	}
-	greeting := make([]byte, 2)
-	if _, err := io.ReadFull(conn, greeting); err != nil {
-		t.Fatalf("read socks greeting: %v", err)
-	}
-
-	host, portText, err := net.SplitHostPort(targetAddr)
-	if err != nil {
-		t.Fatalf("split target addr: %v", err)
-	}
-	port, err := strconv.Atoi(portText)
-	if err != nil {
-		t.Fatalf("parse target port: %v", err)
-	}
-	req := make([]byte, 0, 10)
-	req = append(req, 5, 1, 0, 1)
-	req = append(req, net.ParseIP(host).To4()...)
-	var portBuf [2]byte
-	binary.BigEndian.PutUint16(portBuf[:], uint16(port)) //nolint:gosec // SOCKS5 port is uint16 by definition
-	req = append(req, portBuf[:]...)
-	if _, err := conn.Write(req); err != nil {
-		t.Fatalf("write socks connect: %v", err)
-	}
-
-	reply := make([]byte, 10)
-	if _, err := io.ReadFull(conn, reply); err != nil {
-		t.Fatalf("read socks failure reply: %v", err)
-	}
-	return reply
 }
 
 func TestBuiltInProviderTransportMatrixValidates(t *testing.T) {
@@ -968,17 +922,6 @@ func TestClientServerSOCKSTunnelOverMemoryDatachannel(t *testing.T) {
 	}
 	if !bytes.Equal(line, payload) {
 		t.Fatalf("echo = %q, want %q", line, payload)
-	}
-}
-
-func TestWrongClientIDIsRejected(t *testing.T) {
-	echoAddr := startEchoServer(t)
-	rt := startTunnel(t, "server-client", "wrong-client")
-	defer rt.stop(t)
-
-	reply := connectViaSOCKSExpectFailure(t, rt.socksAddr, echoAddr)
-	if !bytes.Equal(reply, []byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0}) {
-		t.Fatalf("wrong client-id reply = %v, want host unreachable", reply)
 	}
 }
 

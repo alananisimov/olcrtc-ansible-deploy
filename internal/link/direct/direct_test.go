@@ -62,7 +62,7 @@ func TestNewForwardsConfigAndMethods(t *testing.T) {
 		Transport:       name,
 		Carrier:         "carrier",
 		RoomURL:         "room",
-		ClientID:        "client",
+		DeviceID:        "client",
 		Name:            "peer",
 		DNSServer:       "1.1.1.1:53",
 		ProxyAddr:       "127.0.0.1",
@@ -84,7 +84,7 @@ func TestNewForwardsConfigAndMethods(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if seen.ClientID != "client" || seen.ProxyPort != 1080 || seen.VideoTileRS != 20 || seen.VP8BatchSize != 8 {
+	if seen.DeviceID != "client" || seen.ProxyPort != 1080 || seen.VideoTileRS != 20 || seen.VP8BatchSize != 8 {
 		t.Fatalf("forwarded config = %+v", seen)
 	}
 

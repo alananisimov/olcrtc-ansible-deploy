@@ -18,7 +18,6 @@ auth:
   provider: wbstream
 room:
   id: r1
-  client_id: c1
 crypto:
   key: deadbeef
 net:
@@ -50,7 +49,7 @@ debug: true
 
 	got := Apply(session.Config{}, f)
 	if got.Mode != "srv" || got.Link != "direct" || got.Auth != "wbstream" ||
-		got.RoomID != "r1" || got.ClientID != "c1" || got.KeyHex != "deadbeef" ||
+		got.RoomID != "r1" || got.KeyHex != "deadbeef" ||
 		got.Transport != "datachannel" || got.DNSServer != "1.1.1.1:53" ||
 		got.SOCKSHost != "127.0.0.1" || got.SOCKSPort != 1080 ||
 		got.SOCKSUser != "u" || got.SOCKSPass != "p" ||

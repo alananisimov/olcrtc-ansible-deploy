@@ -92,7 +92,7 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 
 	trIface, err := New(context.Background(), transport.Config{
 		Carrier:      name,
-		ClientID:     "client",
+		DeviceID:     "client",
 		VP8FPS:       30,
 		VP8BatchSize: 1,
 	})

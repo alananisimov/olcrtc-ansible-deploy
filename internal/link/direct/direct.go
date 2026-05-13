@@ -21,7 +21,7 @@ func New(ctx context.Context, cfg link.Config) (link.Link, error) {
 		Engine:          cfg.Engine,
 		URL:             cfg.URL,
 		Token:           cfg.Token,
-		ClientID:        cfg.ClientID,
+		DeviceID:        cfg.DeviceID,
 		Name:            cfg.Name,
 		OnData:          cfg.OnData,
 		DNSServer:       cfg.DNSServer,

@@ -101,8 +101,6 @@ var (
 	ErrSOCKSHostRequired = errors.New("socks host required for cnc mode (use -socks-host)")
 	// ErrSOCKSPortRequired indicates that socks port is required for cnc mode.
 	ErrSOCKSPortRequired = errors.New("socks port required for cnc mode (use -socks-port)")
-	// ErrClientIDRequired indicates that client ID is required.
-	ErrClientIDRequired = errors.New("client ID required (use -client-id <id>)")
 )
 
 // Config holds runtime session settings.
@@ -115,7 +113,6 @@ type Config struct {
 	URL             string
 	Token           string
 	RoomID          string
-	ClientID        string
 	KeyHex          string
 	SOCKSHost       string
 	SOCKSPort       int
@@ -241,9 +238,6 @@ func validateTransportRegistration(cfg Config) error {
 func validateCommon(cfg Config) error {
 	if cfg.RoomID == "" && cfg.Auth != authJazz && cfg.Auth != authNone {
 		return ErrRoomIDRequired
-	}
-	if cfg.ClientID == "" {
-		return ErrClientIDRequired
 	}
 	if cfg.KeyHex == "" {
 		return ErrKeyRequired

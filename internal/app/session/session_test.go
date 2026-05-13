@@ -16,7 +16,6 @@ func TestValidate(t *testing.T) {
 		Transport: "datachannel",
 		Auth:      "telemost",
 		RoomID:    "room-1",
-		ClientID:  "client-1",
 		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 		DNSServer: "1.1.1.1:53", //nolint:goconst // test literal, repetition is intentional
 	}
@@ -90,15 +89,6 @@ func TestValidate(t *testing.T) {
 				return cfg
 			}(),
 			want: ErrRoomIDRequired,
-		},
-		{
-			name: "client id required",
-			cfg: func() Config {
-				cfg := base
-				cfg.ClientID = ""
-				return cfg
-			}(),
-			want: ErrClientIDRequired,
 		},
 		{
 			name: "key required",

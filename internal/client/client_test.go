@@ -417,7 +417,7 @@ func TestSendConnectRequestOverSmux(t *testing.T) {
 			done <- err
 			return
 		}
-		if req["cmd"] != "connect" || req["clientId"] != "client-1" || req["addr"] != "example.com" { //nolint:goconst,lll // test literal, repetition is intentional
+		if req["cmd"] != "connect" || req["addr"] != "example.com" { //nolint:goconst,lll // test literal, repetition is intentional
 			done <- errUnexpectedConnectRequest
 			return
 		}
@@ -431,7 +431,7 @@ func TestSendConnectRequestOverSmux(t *testing.T) {
 	}
 	defer func() { _ = stream.Close() }()
 
-	c := &Client{clientID: "client-1"}
+	c := &Client{deviceID: "client-1"}
 	if err := c.sendConnectRequest(stream, "example.com", 443); err != nil {
 		t.Fatalf("sendConnectRequest() error = %v", err)
 	}
@@ -473,7 +473,7 @@ func TestSendConnectRequestRejectsBadAck(t *testing.T) {
 	}
 	defer func() { _ = stream.Close() }()
 
-	c := &Client{clientID: "client-1"}
+	c := &Client{deviceID: "client-1"}
 	if err := c.sendConnectRequest(stream, "example.com", 443); !errors.Is(err, ErrRemoteNotReady) {
 		t.Fatalf("sendConnectRequest() error = %v, want %v", err, ErrRemoteNotReady)
 	}

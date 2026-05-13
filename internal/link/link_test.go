@@ -39,11 +39,11 @@ func TestNewAndAvailable(t *testing.T) {
 
 	called := false
 	Register("test-link", func(_ context.Context, cfg Config) (Link, error) {
-		called = cfg.ClientID == "client-1"
+		called = cfg.DeviceID == "client-1"
 		return &stubLink{}, nil
 	})
 
-	got, err := New(context.Background(), "test-link", Config{ClientID: "client-1"})
+	got, err := New(context.Background(), "test-link", Config{DeviceID: "client-1"})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

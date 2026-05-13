@@ -162,7 +162,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		writerDone:    make(chan struct{}),
 		frameInterval: time.Second / time.Duration(fps),
 		batchSize:     batchSize,
-		bindingToken:  bindingToken(cfg.ClientID),
+		bindingToken:  bindingToken(cfg.DeviceID),
 		localEpoch:    randomEpoch(),
 	}
 

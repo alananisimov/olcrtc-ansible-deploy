@@ -45,8 +45,7 @@ type Auth struct {
 
 // Room identifies the conference room.
 type Room struct {
-	ID       string `yaml:"id"`
-	ClientID string `yaml:"client_id"` // deprecated: server identifier (will be removed)
+	ID string `yaml:"id"`
 }
 
 // Crypto holds the shared secret used to authenticate and encrypt the tunnel.
@@ -137,7 +136,6 @@ func Apply(dst session.Config, f File) session.Config {
 	dst.URL = pickString(dst.URL, f.Engine.URL)
 	dst.Token = pickString(dst.Token, f.Engine.Token)
 	dst.RoomID = pickString(dst.RoomID, f.Room.ID)
-	dst.ClientID = pickString(dst.ClientID, f.Room.ClientID)
 	dst.KeyHex = pickString(dst.KeyHex, f.Crypto.Key)
 	dst.SOCKSHost = pickString(dst.SOCKSHost, f.SOCKS.Host)
 	dst.SOCKSPort = pickInt(dst.SOCKSPort, f.SOCKS.Port)
