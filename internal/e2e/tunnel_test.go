@@ -515,72 +515,31 @@ func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRun
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.Run(
-			ctx,
-			"direct",
-			"datachannel",
-			carrierName,
-			"room",
-			testKeyHex,
-			serverClientID,
-			"127.0.0.1:53",
-			"",
-			0,
-			0,
-			0,
-			0,
-			"",
-			"",
-			0,
-			"",
-			"",
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			"", "", "",
-		)
+		serverErr <- server.Run(ctx, server.Config{
+			Link:      "direct",
+			Transport: "datachannel",
+			Carrier:   carrierName,
+			RoomURL:   "room",
+			KeyHex:    testKeyHex,
+			ClientID:  serverClientID,
+			DNSServer: "127.0.0.1:53",
+		})
 	}()
 	room.waitConnected(t, 1)
 
 	ready := make(chan struct{})
 	clientErr := make(chan error, 1)
 	go func() {
-		clientErr <- client.RunWithReady(
-			ctx,
-			"direct",
-			"datachannel",
-			carrierName,
-			"room",
-			testKeyHex,
-			clientClientID,
-			socksAddr,
-			"127.0.0.1:53",
-			"",
-			"",
-			func() { close(ready) },
-			0,
-			0,
-			0,
-			"",
-			"",
-			0,
-			"",
-			"",
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			"", "", "",
-		)
+		clientErr <- client.RunWithReady(ctx, client.Config{
+			Link:      "direct",
+			Transport: "datachannel",
+			Carrier:   carrierName,
+			RoomURL:   "room",
+			KeyHex:    testKeyHex,
+			ClientID:  clientClientID,
+			LocalAddr: socksAddr,
+			DNSServer: "127.0.0.1:53",
+		}, func() { close(ready) })
 	}()
 	waitForReady(t, ready)
 
@@ -608,35 +567,31 @@ func startRealTunnel(
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.Run(
-			runCtx,
-			"direct",
-			transportName,
-			carrierName,
-			roomURL,
-			testKeyHex,
-			serverClientID,
-			"127.0.0.1:53",
-			"",
-			0,
-			1080,
-			1080,
-			60,
-			"5000k",
-			"none",
-			512,
-			"low",
-			"qrcode",
-			4,
-			20,
-			60,
-			8,
-			30,
-			4,
-			512,
-			1500,
-			"", "", "",
-		)
+		serverErr <- server.Run(runCtx, server.Config{
+			Link:            "direct",
+			Transport:       transportName,
+			Carrier:         carrierName,
+			RoomURL:         roomURL,
+			KeyHex:          testKeyHex,
+			ClientID:        serverClientID,
+			DNSServer:       "127.0.0.1:53",
+			VideoWidth:      1080,
+			VideoHeight:     1080,
+			VideoFPS:        60,
+			VideoBitrate:    "5000k",
+			VideoHW:         "none",
+			VideoQRSize:     512,
+			VideoQRRecovery: "low",
+			VideoCodec:      "qrcode",
+			VideoTileModule: 4,
+			VideoTileRS:     20,
+			VP8FPS:          60,
+			VP8BatchSize:    8,
+			SEIFPS:          30,
+			SEIBatchSize:    4,
+			SEIFragmentSize: 512,
+			SEIAckTimeoutMS: 1500,
+		})
 	}()
 
 	select {
@@ -652,37 +607,32 @@ func startRealTunnel(
 	ready := make(chan struct{})
 	clientErr := make(chan error, 1)
 	go func() {
-		clientErr <- client.RunWithReady(
-			runCtx,
-			"direct",
-			transportName,
-			carrierName,
-			roomURL,
-			testKeyHex,
-			clientClientID,
-			socksAddr,
-			"127.0.0.1:53",
-			"",
-			"",
-			func() { close(ready) },
-			1080,
-			1080,
-			60,
-			"5000k",
-			"none",
-			512,
-			"low",
-			"qrcode",
-			4,
-			20,
-			60,
-			8,
-			30,
-			4,
-			512,
-			1500,
-			"", "", "",
-		)
+		clientErr <- client.RunWithReady(runCtx, client.Config{
+			Link:            "direct",
+			Transport:       transportName,
+			Carrier:         carrierName,
+			RoomURL:         roomURL,
+			KeyHex:          testKeyHex,
+			ClientID:        clientClientID,
+			LocalAddr:       socksAddr,
+			DNSServer:       "127.0.0.1:53",
+			VideoWidth:      1080,
+			VideoHeight:     1080,
+			VideoFPS:        60,
+			VideoBitrate:    "5000k",
+			VideoHW:         "none",
+			VideoQRSize:     512,
+			VideoQRRecovery: "low",
+			VideoCodec:      "qrcode",
+			VideoTileModule: 4,
+			VideoTileRS:     20,
+			VP8FPS:          60,
+			VP8BatchSize:    8,
+			SEIFPS:          30,
+			SEIBatchSize:    4,
+			SEIFragmentSize: 512,
+			SEIAckTimeoutMS: 1500,
+		}, func() { close(ready) })
 	}()
 
 	select {

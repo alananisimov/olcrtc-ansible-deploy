@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
@@ -168,35 +169,12 @@ func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 		resetMobileGlobals(t)
 	})
 
-	runClientWithReady = func(
-		ctx context.Context,
-		linkName, transportName, carrierName, roomURL, _, clientID string,
-		localAddr string,
-		dnsServer, _, _ string,
-		onReady func(),
-		_ int,
-		_ int,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ int,
-		vp8FPS int,
-		vp8BatchSize int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_, _, _ string,
-	) error {
-		if linkName != defaultLink || transportName != dataTransport || carrierName != carrierJazz ||
-			roomURL != "any" || clientID != "client" || localAddr != "127.0.0.1:1080" ||
-			dnsServer != defaultDNSServer || vp8FPS != 60 || vp8BatchSize != 8 {
+	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
+		if cfg.Link != defaultLink || cfg.Transport != dataTransport || cfg.Carrier != carrierJazz ||
+			cfg.RoomURL != "any" || cfg.ClientID != "client" || cfg.LocalAddr != "127.0.0.1:1080" ||
+			cfg.DNSServer != defaultDNSServer || cfg.VP8FPS != 60 || cfg.VP8BatchSize != 8 {
 			t.Fatalf("RunWithReady args mismatch: link=%q transport=%q carrier=%q room=%q client=%q local=%q dns=%q vp8=%d/%d",
-				linkName, transportName, carrierName, roomURL, clientID, localAddr, dnsServer, vp8FPS, vp8BatchSize)
+				cfg.Link, cfg.Transport, cfg.Carrier, cfg.RoomURL, cfg.ClientID, cfg.LocalAddr, cfg.DNSServer, cfg.VP8FPS, cfg.VP8BatchSize)
 		}
 		onReady()
 		<-ctx.Done()
@@ -225,34 +203,11 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 		resetMobileGlobals(t)
 	})
 
-	runClientWithReady = func(
-		ctx context.Context,
-		_, transportName, _, roomURL, _, _ string,
-		localAddr string,
-		_, socksUser, socksPass string,
-		onReady func(),
-		_ int,
-		_ int,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_, _, _ string,
-	) error {
-		if transportName != defaultTransport || roomURL != "https://telemost.yandex.ru/j/room" ||
-			localAddr != "127.0.0.1:1081" || socksUser != "u" || socksPass != "p" {
+	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
+		if cfg.Transport != defaultTransport || cfg.RoomURL != "https://telemost.yandex.ru/j/room" ||
+			cfg.LocalAddr != "127.0.0.1:1081" || cfg.SOCKSUser != "u" || cfg.SOCKSPass != "p" {
 			t.Fatalf("Start args mismatch: transport=%q room=%q local=%q user/pass=%q/%q",
-				transportName, roomURL, localAddr, socksUser, socksPass)
+				cfg.Transport, cfg.RoomURL, cfg.LocalAddr, cfg.SOCKSUser, cfg.SOCKSPass)
 		}
 		onReady()
 		<-ctx.Done()
@@ -267,32 +222,9 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 	}
 	Stop()
 
-	runClientWithReady = func(
-		ctx context.Context,
-		_, transportName, _, _, _, _ string,
-		_ string,
-		_, _, _ string,
-		onReady func(),
-		_ int,
-		_ int,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ int,
-		vp8FPS int,
-		vp8BatchSize int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_, _, _ string,
-	) error {
-		if transportName != dataTransport || vp8FPS != 1 || vp8BatchSize != 64 {
-			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d", transportName, vp8FPS, vp8BatchSize)
+	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
+		if cfg.Transport != dataTransport || cfg.VP8FPS != 1 || cfg.VP8BatchSize != 64 {
+			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d", cfg.Transport, cfg.VP8FPS, cfg.VP8BatchSize)
 		}
 		onReady()
 		<-ctx.Done()
@@ -313,30 +245,7 @@ func TestCheckTimeoutAndRunError(t *testing.T) {
 		resetMobileGlobals(t)
 	})
 
-	runClientWithReady = func(
-		ctx context.Context,
-		_, _, _, _, _, _ string,
-		_ string,
-		_, _, _ string,
-		_ func(),
-		_ int,
-		_ int,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ string,
-		_ string,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_ int,
-		_, _, _ string,
-	) error {
+	runClientWithReady = func(ctx context.Context, _ client.Config, _ func()) error {
 		<-ctx.Done()
 		return nil
 	}
@@ -345,28 +254,7 @@ func TestCheckTimeoutAndRunError(t *testing.T) {
 	}
 
 	want := errMobileCheckFailed
-	runClientWithReady = func(
-		context.Context,
-		string, string, string, string, string, string,
-		string,
-		string, string, string,
-		func(),
-		int, int, int,
-		string,
-		string,
-		int,
-		string,
-		string,
-		int,
-		int,
-		int,
-		int,
-		int,
-		int,
-		int,
-		int,
-		string, string, string,
-	) error {
+	runClientWithReady = func(context.Context, client.Config, func()) error {
 		return want
 	}
 	if _, err := Check("telemost", defaultTransport, "room", "client", "key", 1084, 100, 30, 1); !errors.Is(err, want) {

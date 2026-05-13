@@ -58,61 +58,58 @@ type ConnectRequest struct {
 	Port     int    `json:"port"`
 }
 
-// Run starts the server with the specified parameters.
-func Run(
-	ctx context.Context,
-	linkName,
-	transportName,
-	carrierName,
-	roomURL,
-	keyHex,
-	clientID string,
-	dnsServer,
-	socksProxyAddr string,
-	socksProxyPort int,
-	videoWidth int,
-	videoHeight int,
-	videoFPS int,
-	videoBitrate string,
-	videoHW string,
-	videoQRSize int,
-	videoQRRecovery string,
-	videoCodec string,
-	videoTileModule int,
-	videoTileRS int,
-	vp8FPS int,
-	vp8BatchSize int,
-	seiFPS int,
-	seiBatchSize int,
-	seiFragmentSize int,
-	seiAckTimeoutMS int,
-	engine, url, token string,
-) error {
+// Config holds runtime configuration for [Run].
+type Config struct {
+	Link            string
+	Transport       string
+	Carrier         string
+	RoomURL         string
+	KeyHex          string
+	ClientID        string
+	DNSServer       string
+	SOCKSProxyAddr  string
+	SOCKSProxyPort  int
+	VideoWidth      int
+	VideoHeight     int
+	VideoFPS        int
+	VideoBitrate    string
+	VideoHW         string
+	VideoQRSize     int
+	VideoQRRecovery string
+	VideoCodec      string
+	VideoTileModule int
+	VideoTileRS     int
+	VP8FPS          int
+	VP8BatchSize    int
+	SEIFPS          int
+	SEIBatchSize    int
+	SEIFragmentSize int
+	SEIAckTimeoutMS int
+	Engine          string
+	URL             string
+	Token           string
+}
+
+// Run starts the server with the given configuration.
+func Run(ctx context.Context, cfg Config) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	cipher, err := setupCipher(keyHex)
+	cipher, err := setupCipher(cfg.KeyHex)
 	if err != nil {
 		return fmt.Errorf("setupCipher failed: %w", err)
 	}
 
 	s := &Server{
 		cipher:         cipher,
-		clientID:       clientID,
-		dnsServer:      dnsServer,
-		socksProxyAddr: socksProxyAddr,
-		socksProxyPort: socksProxyPort,
+		clientID:       cfg.ClientID,
+		dnsServer:      cfg.DNSServer,
+		socksProxyAddr: cfg.SOCKSProxyAddr,
+		socksProxyPort: cfg.SOCKSProxyPort,
 	}
 	s.setupResolver()
 
-	if err := s.bringUpLink(
-		runCtx, linkName, transportName, carrierName, roomURL, cancel,
-		videoWidth, videoHeight, videoFPS, videoBitrate, videoHW,
-		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
-		vp8FPS, vp8BatchSize,
-		seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS,
-		engine, url, token,
-	); err != nil {
+	if err := s.bringUpLink(runCtx, cfg, cancel); err != nil {
 		return err
 	}
 
@@ -175,47 +172,38 @@ func smuxConfig() *smux.Config {
 
 func (s *Server) bringUpLink(
 	ctx context.Context,
-	linkName, transportName, carrierName, roomURL string,
+	cfg Config,
 	cancel context.CancelFunc,
-	videoWidth, videoHeight, videoFPS int,
-	videoBitrate, videoHW string,
-	videoQRSize int,
-	videoQRRecovery string,
-	videoCodec string,
-	videoTileModule, videoTileRS int,
-	vp8FPS, vp8BatchSize int,
-	seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS int,
-	engine, url, token string,
 ) error {
-	ln, err := link.New(ctx, linkName, link.Config{
-		Transport:       transportName,
-		Carrier:         carrierName,
-		RoomURL:         roomURL,
-		Engine:          engine,
-		URL:             url,
-		Token:           token,
+	ln, err := link.New(ctx, cfg.Link, link.Config{
+		Transport:       cfg.Transport,
+		Carrier:         cfg.Carrier,
+		RoomURL:         cfg.RoomURL,
+		Engine:          cfg.Engine,
+		URL:             cfg.URL,
+		Token:           cfg.Token,
 		ClientID:        s.clientID,
 		Name:            names.Generate(),
 		OnData:          s.onData,
 		DNSServer:       s.dnsServer,
 		ProxyAddr:       s.socksProxyAddr,
 		ProxyPort:       s.socksProxyPort,
-		VideoWidth:      videoWidth,
-		VideoHeight:     videoHeight,
-		VideoFPS:        videoFPS,
-		VideoBitrate:    videoBitrate,
-		VideoHW:         videoHW,
-		VideoQRSize:     videoQRSize,
-		VideoQRRecovery: videoQRRecovery,
-		VideoCodec:      videoCodec,
-		VideoTileModule: videoTileModule,
-		VideoTileRS:     videoTileRS,
-		VP8FPS:          vp8FPS,
-		VP8BatchSize:    vp8BatchSize,
-		SEIFPS:          seiFPS,
-		SEIBatchSize:    seiBatchSize,
-		SEIFragmentSize: seiFragmentSize,
-		SEIAckTimeoutMS: seiAckTimeoutMS,
+		VideoWidth:      cfg.VideoWidth,
+		VideoHeight:     cfg.VideoHeight,
+		VideoFPS:        cfg.VideoFPS,
+		VideoBitrate:    cfg.VideoBitrate,
+		VideoHW:         cfg.VideoHW,
+		VideoQRSize:     cfg.VideoQRSize,
+		VideoQRRecovery: cfg.VideoQRRecovery,
+		VideoCodec:      cfg.VideoCodec,
+		VideoTileModule: cfg.VideoTileModule,
+		VideoTileRS:     cfg.VideoTileRS,
+		VP8FPS:          cfg.VP8FPS,
+		VP8BatchSize:    cfg.VP8BatchSize,
+		SEIFPS:          cfg.SEIFPS,
+		SEIBatchSize:    cfg.SEIBatchSize,
+		SEIFragmentSize: cfg.SEIFragmentSize,
+		SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create link: %w", err)
@@ -228,7 +216,7 @@ func (s *Server) bringUpLink(
 	})
 	ln.SetReconnectCallback(func() { s.handleReconnect() })
 
-	logger.Infof("Connecting link via %s/%s/%s...", linkName, transportName, carrierName)
+	logger.Infof("Connecting link via %s/%s/%s...", cfg.Link, cfg.Transport, cfg.Carrier)
 	if err := ln.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect link: %w", err)
 	}

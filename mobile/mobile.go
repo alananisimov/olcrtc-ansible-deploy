@@ -216,38 +216,23 @@ func Check(
 	go func() {
 		doneCh <- runClientWithReady(
 			ctx,
-			defaultLink,
-			transportName,
-			carrierName,
-			buildRoomURL(carrierName, roomID),
-			keyHex,
-			clientID,
-			fmt.Sprintf("127.0.0.1:%d", socksPort),
-			defaultDNSServer,
-			"",
-			"",
+			client.Config{
+				Link:         defaultLink,
+				Transport:    transportName,
+				Carrier:      carrierName,
+				RoomURL:      buildRoomURL(carrierName, roomID),
+				KeyHex:       keyHex,
+				ClientID:     clientID,
+				LocalAddr:    fmt.Sprintf("127.0.0.1:%d", socksPort),
+				DNSServer:    defaultDNSServer,
+				VP8FPS:       clampAtLeastOne(vp8FPS, 120),
+				VP8BatchSize: clampAtLeastOne(vp8BatchSize, 64),
+			},
 			func() {
 				readyOnce.Do(func() {
 					close(readyCh)
 				})
 			},
-			0,
-			0,
-			0,
-			"",
-			"",
-			0,
-			"",
-			"",
-			0,
-			0,
-			clampAtLeastOne(vp8FPS, 120),
-			clampAtLeastOne(vp8BatchSize, 64),
-			0,
-			0,
-			0,
-			0,
-			"", "", "",
 		)
 	}()
 
@@ -314,38 +299,23 @@ func Ping(
 	go func() {
 		doneCh <- runClientWithReady(
 			ctx,
-			defaultLink,
-			transportName,
-			carrierName,
-			buildRoomURL(carrierName, roomID),
-			keyHex,
-			clientID,
-			fmt.Sprintf("127.0.0.1:%d", socksPort),
-			defaultDNSServer,
-			"",
-			"",
+			client.Config{
+				Link:         defaultLink,
+				Transport:    transportName,
+				Carrier:      carrierName,
+				RoomURL:      buildRoomURL(carrierName, roomID),
+				KeyHex:       keyHex,
+				ClientID:     clientID,
+				LocalAddr:    fmt.Sprintf("127.0.0.1:%d", socksPort),
+				DNSServer:    defaultDNSServer,
+				VP8FPS:       clampAtLeastOne(vp8FPS, 120),
+				VP8BatchSize: clampAtLeastOne(vp8BatchSize, 64),
+			},
 			func() {
 				readyOnce.Do(func() {
 					close(readyCh)
 				})
 			},
-			0,
-			0,
-			0,
-			"",
-			"",
-			0,
-			"",
-			"",
-			0,
-			0,
-			clampAtLeastOne(vp8FPS, 120),
-			clampAtLeastOne(vp8BatchSize, 64),
-			0,
-			0,
-			0,
-			0,
-			"", "", "",
 		)
 	}()
 
@@ -574,38 +544,25 @@ func startWithConfig(
 
 		err := runClientWithReady(
 			ctx,
-			cfg.link,
-			cfg.transport,
-			carrierName,
-			roomURL,
-			keyHex,
-			clientID,
-			fmt.Sprintf("127.0.0.1:%d", socksPort),
-			cfg.dnsServer,
-			socksUser,
-			socksPass,
+			client.Config{
+				Link:         cfg.link,
+				Transport:    cfg.transport,
+				Carrier:      carrierName,
+				RoomURL:      roomURL,
+				KeyHex:       keyHex,
+				ClientID:     clientID,
+				LocalAddr:    fmt.Sprintf("127.0.0.1:%d", socksPort),
+				DNSServer:    cfg.dnsServer,
+				SOCKSUser:    socksUser,
+				SOCKSPass:    socksPass,
+				VP8FPS:       cfg.vp8FPS,
+				VP8BatchSize: cfg.vp8BatchSize,
+			},
 			func() {
 				readyOnce.Do(func() {
 					close(localReady)
 				})
 			},
-			0,
-			0,
-			0,
-			"",
-			"",
-			0,
-			"",
-			"",
-			0,
-			0,
-			cfg.vp8FPS,
-			cfg.vp8BatchSize,
-			0,
-			0,
-			0,
-			0,
-			"", "", "",
 		)
 
 		mu.Lock()

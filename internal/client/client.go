@@ -55,111 +55,75 @@ type Client struct {
 	socksPass string
 }
 
-// Run starts the client with the specified parameters.
-func Run(
-	ctx context.Context,
-	linkName,
-	transportName,
-	carrierName,
-	roomURL,
-	keyHex,
-	clientID string,
-	localAddr string,
-	dnsServer,
-	socksUser string,
-	socksPass string,
-	videoWidth int,
-	videoHeight int,
-	videoFPS int,
-	videoBitrate string,
-	videoHW string,
-	videoQRSize int,
-	videoQRRecovery string,
-	videoCodec string,
-	videoTileModule int,
-	videoTileRS int,
-	vp8FPS int,
-	vp8BatchSize int,
-	seiFPS int,
-	seiBatchSize int,
-	seiFragmentSize int,
-	seiAckTimeoutMS int,
-	engine, url, token string,
-) error {
-	return RunWithReady(
-		ctx, linkName, transportName, carrierName, roomURL, keyHex, clientID, localAddr,
-		dnsServer, socksUser, socksPass, nil,
-		videoWidth, videoHeight, videoFPS, videoBitrate, videoHW,
-		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
-		vp8FPS, vp8BatchSize,
-		seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS,
-		engine, url, token,
-	)
+// Config holds runtime configuration for [Run] and [RunWithReady].
+type Config struct {
+	Link            string
+	Transport       string
+	Carrier         string
+	RoomURL         string
+	KeyHex          string
+	ClientID        string
+	LocalAddr       string
+	DNSServer       string
+	SOCKSUser       string
+	SOCKSPass       string
+	VideoWidth      int
+	VideoHeight     int
+	VideoFPS        int
+	VideoBitrate    string
+	VideoHW         string
+	VideoQRSize     int
+	VideoQRRecovery string
+	VideoCodec      string
+	VideoTileModule int
+	VideoTileRS     int
+	VP8FPS          int
+	VP8BatchSize    int
+	SEIFPS          int
+	SEIBatchSize    int
+	SEIFragmentSize int
+	SEIAckTimeoutMS int
+	Engine          string
+	URL             string
+	Token           string
 }
 
-// RunWithReady is like Run but accepts a callback that is called when the client is ready.
-func RunWithReady(
-	ctx context.Context,
-	linkName,
-	transportName,
-	carrierName,
-	roomURL,
-	keyHex,
-	clientID string,
-	localAddr string,
-	dnsServer,
-	socksUser string,
-	socksPass string,
-	onReady func(),
-	videoWidth int,
-	videoHeight int,
-	videoFPS int,
-	videoBitrate string,
-	videoHW string,
-	videoQRSize int,
-	videoQRRecovery string,
-	videoCodec string,
-	videoTileModule int,
-	videoTileRS int,
-	vp8FPS int,
-	vp8BatchSize int,
-	seiFPS int,
-	seiBatchSize int,
-	seiFragmentSize int,
-	seiAckTimeoutMS int,
-	engine, url, token string,
-) error {
+// Run starts the client with the given configuration.
+func Run(ctx context.Context, cfg Config) error {
+	return RunWithReady(ctx, cfg, nil)
+}
+
+// RunWithReady is like Run but invokes onReady once the local SOCKS listener is up.
+func RunWithReady(ctx context.Context, cfg Config, onReady func()) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	cipher, err := setupCipher(keyHex)
+	cipher, err := setupCipher(cfg.KeyHex)
 	if err != nil {
 		return fmt.Errorf("setupCipher failed: %w", err)
 	}
 
-	c := &Client{cipher: cipher, clientID: clientID, dnsServer: dnsServer, socksUser: socksUser, socksPass: socksPass}
+	c := &Client{
+		cipher:    cipher,
+		clientID:  cfg.ClientID,
+		dnsServer: cfg.DNSServer,
+		socksUser: cfg.SOCKSUser,
+		socksPass: cfg.SOCKSPass,
+	}
 
-	if err := c.bringUpLink(
-		runCtx, linkName, transportName, carrierName, roomURL, cancel,
-		dnsServer, "", 0,
-		videoWidth, videoHeight, videoFPS, videoBitrate, videoHW,
-		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
-		vp8FPS, vp8BatchSize,
-		seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS,
-		engine, url, token,
-	); err != nil {
+	if err := c.bringUpLink(runCtx, cfg, cancel); err != nil {
 		return err
 	}
 	defer c.shutdown()
 
 	lc := net.ListenConfig{}
-	listener, err := lc.Listen(runCtx, "tcp4", localAddr)
+	listener, err := lc.Listen(runCtx, "tcp4", cfg.LocalAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", localAddr, err)
+		return fmt.Errorf("failed to listen on %s: %w", cfg.LocalAddr, err)
 	}
 	defer func() { _ = listener.Close() }()
 
-	logger.Infof("SOCKS5 server listening on %s", localAddr)
+	logger.Infof("SOCKS5 server listening on %s", cfg.LocalAddr)
 
 	if onReady != nil {
 		onReady()
@@ -173,49 +137,36 @@ func RunWithReady(
 
 func (c *Client) bringUpLink(
 	ctx context.Context,
-	linkName, transportName, carrierName, roomURL string,
+	cfg Config,
 	cancel context.CancelFunc,
-	dnsServer, socksProxyAddr string,
-	socksProxyPort int,
-	videoWidth, videoHeight, videoFPS int,
-	videoBitrate, videoHW string,
-	videoQRSize int,
-	videoQRRecovery string,
-	videoCodec string,
-	videoTileModule, videoTileRS int,
-	vp8FPS, vp8BatchSize int,
-	seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS int,
-	engine, url, token string,
 ) error {
-	ln, err := link.New(ctx, linkName, link.Config{
-		Transport:       transportName,
-		Carrier:         carrierName,
-		RoomURL:         roomURL,
-		Engine:          engine,
-		URL:             url,
-		Token:           token,
+	ln, err := link.New(ctx, cfg.Link, link.Config{
+		Transport:       cfg.Transport,
+		Carrier:         cfg.Carrier,
+		RoomURL:         cfg.RoomURL,
+		Engine:          cfg.Engine,
+		URL:             cfg.URL,
+		Token:           cfg.Token,
 		ClientID:        c.clientID,
 		Name:            names.Generate(),
 		OnData:          c.onData,
-		DNSServer:       dnsServer,
-		ProxyAddr:       socksProxyAddr,
-		ProxyPort:       socksProxyPort,
-		VideoWidth:      videoWidth,
-		VideoHeight:     videoHeight,
-		VideoFPS:        videoFPS,
-		VideoBitrate:    videoBitrate,
-		VideoHW:         videoHW,
-		VideoQRSize:     videoQRSize,
-		VideoQRRecovery: videoQRRecovery,
-		VideoCodec:      videoCodec,
-		VideoTileModule: videoTileModule,
-		VideoTileRS:     videoTileRS,
-		VP8FPS:          vp8FPS,
-		VP8BatchSize:    vp8BatchSize,
-		SEIFPS:          seiFPS,
-		SEIBatchSize:    seiBatchSize,
-		SEIFragmentSize: seiFragmentSize,
-		SEIAckTimeoutMS: seiAckTimeoutMS,
+		DNSServer:       cfg.DNSServer,
+		VideoWidth:      cfg.VideoWidth,
+		VideoHeight:     cfg.VideoHeight,
+		VideoFPS:        cfg.VideoFPS,
+		VideoBitrate:    cfg.VideoBitrate,
+		VideoHW:         cfg.VideoHW,
+		VideoQRSize:     cfg.VideoQRSize,
+		VideoQRRecovery: cfg.VideoQRRecovery,
+		VideoCodec:      cfg.VideoCodec,
+		VideoTileModule: cfg.VideoTileModule,
+		VideoTileRS:     cfg.VideoTileRS,
+		VP8FPS:          cfg.VP8FPS,
+		VP8BatchSize:    cfg.VP8BatchSize,
+		SEIFPS:          cfg.SEIFPS,
+		SEIBatchSize:    cfg.SEIBatchSize,
+		SEIFragmentSize: cfg.SEIFragmentSize,
+		SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create link: %w", err)
