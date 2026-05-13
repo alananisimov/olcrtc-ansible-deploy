@@ -20,7 +20,6 @@ Examples:
 | `link`                                                           | `direct`                                                  |
 | `auth.provider`                                                  | `telemost`, `jazz`, `wbstream`, `none`                    |
 | `room.id`                                                        | conference room id                                        |
-| `room.client_id`                                                 | deprecated, will be removed                               |
 | `crypto.key`                                                     | 64-char hex (32 bytes)                                    |
 | `net.transport`                                                  | `datachannel`, `videochannel`, `seichannel`, `vp8channel` |
 | `net.dns`                                                        | resolver `host:port`                                      |

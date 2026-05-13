@@ -140,17 +140,14 @@ else
 fi
 
 echo ""
-read -p "Enter Client ID [default: default]: " CLIENT_ID_INPUT
-CLIENT_ID=${CLIENT_ID_INPUT:-default}
-
-echo ""
 read -p "DNS server [default: 8.8.8.8:53]: " DNS_INPUT
 DNS=${DNS_INPUT:-8.8.8.8:53}
 
 echo ""
 read -p "Use SOCKS5 proxy for egress? (y/N): " USE_PROXY
 
-EXTRA_ARGS=()
+SOCKS_PROXY_ADDR=""
+SOCKS_PROXY_PORT=0
 
 if [[ "$USE_PROXY" =~ ^[Yy]$ ]]; then
     read -p "Enter SOCKS5 proxy address [default: 127.0.0.1]: " PROXY_ADDR_INPUT
@@ -160,10 +157,14 @@ if [[ "$USE_PROXY" =~ ^[Yy]$ ]]; then
     SOCKS_PROXY_PORT=${PROXY_PORT_INPUT:-1080}
 
     echo "[*] Will use SOCKS5 proxy: $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
-    EXTRA_ARGS+=(-socks-proxy "$SOCKS_PROXY_ADDR" -socks-proxy-port "$SOCKS_PROXY_PORT")
 fi
 
-TRANSPORT_ARGS=()
+# Transport-specific settings
+VIDEO_W=1920; VIDEO_H=1080; VIDEO_FPS=30; VIDEO_BITRATE="2M"; VIDEO_HW="none"
+VIDEO_CODEC="qrcode"; VIDEO_QR_SIZE=0; VIDEO_QR_RECOVERY="low"
+VIDEO_TILE_MODULE=4; VIDEO_TILE_RS=20
+VP8_FPS=25; VP8_BATCH=1
+SEI_FPS=20; SEI_BATCH=1; SEI_FRAG=900; SEI_ACK=3000
 
 if [ "$TRANSPORT" = "videochannel" ]; then
     echo ""
@@ -187,8 +188,6 @@ if [ "$TRANSPORT" = "videochannel" ]; then
 
             read -p "Tile Reed-Solomon parity percent 0..200 [default: 20]: " VTILE_RS_INPUT
             VIDEO_TILE_RS=${VTILE_RS_INPUT:-20}
-
-            TRANSPORT_ARGS+=(-video-tile-module "$VIDEO_TILE_MODULE" -video-tile-rs "$VIDEO_TILE_RS")
             ;;
         *)
             VIDEO_CODEC="qrcode"
@@ -204,11 +203,6 @@ if [ "$TRANSPORT" = "videochannel" ]; then
 
             read -p "QR fragment size bytes [default: 0 (auto)]: " VQRSZ_INPUT
             VIDEO_QR_SIZE=${VQRSZ_INPUT:-0}
-
-            if [ "$VIDEO_QR_SIZE" -gt 0 ]; then
-                TRANSPORT_ARGS+=(-video-qr-size "$VIDEO_QR_SIZE")
-            fi
-            TRANSPORT_ARGS+=(-video-qr-recovery "$VIDEO_QR_RECOVERY")
             ;;
     esac
 
@@ -220,9 +214,6 @@ if [ "$TRANSPORT" = "videochannel" ]; then
 
     read -p "Hardware acceleration (none/nvenc) [default: none]: " VHW_INPUT
     VIDEO_HW=${VHW_INPUT:-none}
-
-    TRANSPORT_ARGS+=(-video-w "$VIDEO_W" -video-h "$VIDEO_H" -video-fps "$VIDEO_FPS" \
-        -video-bitrate "$VIDEO_BITRATE" -video-hw "$VIDEO_HW" -video-codec "$VIDEO_CODEC")
 fi
 
 if [ "$TRANSPORT" = "vp8channel" ]; then
@@ -234,8 +225,6 @@ if [ "$TRANSPORT" = "vp8channel" ]; then
 
     read -p "VP8 batch size (frames per tick) [default: 1]: " VP8BATCH_INPUT
     VP8_BATCH=${VP8BATCH_INPUT:-1}
-
-    TRANSPORT_ARGS+=(-vp8-fps "$VP8_FPS" -vp8-batch "$VP8_BATCH")
 fi
 
 if [ "$TRANSPORT" = "seichannel" ]; then
@@ -253,8 +242,6 @@ if [ "$TRANSPORT" = "seichannel" ]; then
 
     read -p "SEI ACK timeout in milliseconds [default: 3000]: " SEIACK_INPUT
     SEI_ACK=${SEIACK_INPUT:-3000}
-
-    TRANSPORT_ARGS+=(-fps "$SEI_FPS" -batch "$SEI_BATCH" -frag "$SEI_FRAG" -ack-ms "$SEI_ACK")
 fi
 
 echo ""
@@ -303,13 +290,24 @@ if [ ! -f "$WORK_DIR/olcrtc" ]; then
 fi
 
 if [ "$GEN_ROOM" = "1" ]; then
-    echo "[*] Generating room via -mode gen..."
+    echo "[*] Generating room via mode: gen..."
+    GEN_CONFIG="$WORK_DIR/gen.yaml"
+    cat > "$GEN_CONFIG" <<GENEOF
+mode: gen
+auth:
+  provider: "$CARRIER"
+net:
+  dns: "$DNS"
+gen:
+  amount: 1
+data: data
+GENEOF
     ROOM_ID=$(podman run --rm \
         --network host \
         -v $WORK_DIR:/app:Z \
         -w /app \
         $IMAGE_NAME \
-        ./olcrtc -mode gen -carrier "$CARRIER" -dns "$DNS" -amount 1 -data data)
+        ./olcrtc gen.yaml)
     if [ -z "$ROOM_ID" ]; then
         echo "[X] Room generation failed"
         exit 1
@@ -335,6 +333,69 @@ else
     echo ""
 fi
 
+# Generate YAML config
+CONFIG_FILE="$WORK_DIR/server.yaml"
+cat > "$CONFIG_FILE" <<EOF
+mode: srv
+link: direct
+auth:
+  provider: "$CARRIER"
+room:
+  id: "$ROOM_ID"
+crypto:
+  key: "$KEY"
+net:
+  transport: "$TRANSPORT"
+  dns: "$DNS"
+EOF
+
+if [ -n "$SOCKS_PROXY_ADDR" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+socks:
+  proxy_addr: "$SOCKS_PROXY_ADDR"
+  proxy_port: $SOCKS_PROXY_PORT
+EOF
+fi
+
+if [ "$TRANSPORT" = "vp8channel" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+vp8:
+  fps: $VP8_FPS
+  batch_size: $VP8_BATCH
+EOF
+fi
+
+if [ "$TRANSPORT" = "seichannel" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+sei:
+  fps: $SEI_FPS
+  batch_size: $SEI_BATCH
+  fragment_size: $SEI_FRAG
+  ack_timeout_ms: $SEI_ACK
+EOF
+fi
+
+if [ "$TRANSPORT" = "videochannel" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+video:
+  width: $VIDEO_W
+  height: $VIDEO_H
+  fps: $VIDEO_FPS
+  bitrate: "$VIDEO_BITRATE"
+  hw: $VIDEO_HW
+  codec: $VIDEO_CODEC
+  qr_size: $VIDEO_QR_SIZE
+  qr_recovery: $VIDEO_QR_RECOVERY
+  tile_module: $VIDEO_TILE_MODULE
+  tile_rs: $VIDEO_TILE_RS
+EOF
+fi
+
+cat >> "$CONFIG_FILE" <<EOF
+data: data
+debug: false
+EOF
+
 echo "[*] Starting OlcRTC server..."
 podman run -d \
     --network host \
@@ -343,9 +404,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode srv -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
-        -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
-        "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
+    ./olcrtc server.yaml
 
 read -p "Enter a comment for the config (default: olc - t.me/openlibrecommunity): " sub_configname
 if [ -z "$sub_configname" ]; then
@@ -359,7 +418,6 @@ echo "Container name: $CONTAINER_NAME"
 echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
-echo "Client ID:      $CLIENT_ID"
 echo "Encryption key: $KEY"
 echo ""
 TRANSPORT_PAYLOAD=""
@@ -378,7 +436,7 @@ elif [ "$TRANSPORT" = "videochannel" ]; then
     fi
 fi
 
-OLC_URI="olcrtc://$CARRIER?${TRANSPORT}${TRANSPORT_PAYLOAD}@$ROOM_ID#$KEY%$CLIENT_ID\$$sub_configname"
+OLC_URI="olcrtc://$CARRIER?${TRANSPORT}${TRANSPORT_PAYLOAD}@$ROOM_ID#$KEY\$$sub_configname"
 echo "uri: $OLC_URI"
 echo ""
 
@@ -401,7 +459,7 @@ else
     echo "[!] Could not download gr ($GR_URL), skipping QR"
 fi
 
-if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
+if [ -n "$SOCKS_PROXY_ADDR" ]; then
     echo "SOCKS5 proxy:   $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
 fi
 
@@ -411,33 +469,4 @@ echo "  podman logs -f $CONTAINER_NAME"
 echo ""
 echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
-echo ""
-echo "Client command:"
-echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
-echo ""
-echo -n "    -link direct -transport \"$TRANSPORT\" -dns $DNS -data data \\"
-echo ""
-
-if [ "$TRANSPORT" = "videochannel" ]; then
-    echo -n "    -video-w \"$VIDEO_W\" -video-h \"$VIDEO_H\" -video-fps \"$VIDEO_FPS\" \\"
-    echo ""
-    echo -n "    -video-bitrate \"$VIDEO_BITRATE\" -video-hw \"$VIDEO_HW\" -video-codec \"$VIDEO_CODEC\" \\"
-    echo ""
-    if [ "$VIDEO_CODEC" = "tile" ]; then
-        echo -n "    -video-tile-module \"$VIDEO_TILE_MODULE\" -video-tile-rs \"$VIDEO_TILE_RS\" \\"
-        echo ""
-    fi
-fi
-
-if [ "$TRANSPORT" = "vp8channel" ]; then
-    echo -n "    -vp8-fps \"$VP8_FPS\" -vp8-batch \"$VP8_BATCH\" \\"
-    echo ""
-fi
-
-if [ "$TRANSPORT" = "seichannel" ]; then
-    echo -n "    -fps \"$SEI_FPS\" -batch \"$SEI_BATCH\" -frag \"$SEI_FRAG\" -ack-ms \"$SEI_ACK\" \\"
-    echo ""
-fi
-
-echo "    -socks-host 0.0.0.0 -socks-port 1080"
 echo ""

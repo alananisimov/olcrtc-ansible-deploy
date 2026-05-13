@@ -133,16 +133,6 @@ Enter Room ID:
 
 Для **jazz** скрипт предложит выбор: сгенерировать автоматически (рекомендуется) или ввести существующий ID. При автогенерации скрипт запустит `gen` и получит ID до старта сервера. Также можно создать руму через сайт [jazz](https://salutejazz.ru/calls/create).
 
-### Client ID
-
-```
-Enter Client ID [default: default]:
-```
-
-Это обязательный идентификатор клиента. Он должен быть одинаковым на сервере и клиенте - используется чтобы клиент подключался именно к вашему серверу, а не к случайному серверу в руме.
-
-Один `-client-id` технически может держать бесконечное количество одновременных соединений. Однако SFU ограничивает полосу пропускания на одного участника звонка, поэтому оптимально использовать схему **1 client-id = 1 пользователь** - но это не обязательное требование.
-
 ### DNS
 
 ```
@@ -243,11 +233,10 @@ Container name: olcrtc-server
 Auth:           wbstream
 Transport:      datachannel
 Room ID:        abc123xyz
-Client ID:      default
 Encryption key: d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799
 ```
 
-**Сохрани Room ID, Client ID и Encryption key** - они нужны для клиента.
+**Сохрани Room ID и Encryption key** - они нужны для клиента.
 
 ---
 
@@ -261,15 +250,7 @@ cd olcrtc
 ./script/cnc.sh
 ```
 
-Отвечай на те же вопросы что на сервере - **auth, transport, room ID и client ID должны совпадать**.
-
-Когда спросит client ID:
-
-```
-Enter Client ID [default: default]: default
-```
-
-Введи тот же `client ID`, который использовал на сервере.
+Отвечай на те же вопросы что на сервере - **auth, transport и room ID должны совпадать**.
 
 Когда спросит ключ:
 
@@ -302,7 +283,6 @@ SOCKS5 username (leave empty to disable auth):
 [+] Client started successfully!
 
 Container name: olcrtc-client
-Client ID:      default
 SOCKS5 proxy:   127.0.0.1:8808
 ```
 
@@ -349,4 +329,4 @@ podman stop olcrtc-client
 
 Хочешь собрать руками без Podman? -> [Мануальная сборка](manual.md)
 
-Все флаги и матрица совместимости -> [settings.md](settings.md)
+Все настройки и матрица совместимости -> [settings.md](settings.md)

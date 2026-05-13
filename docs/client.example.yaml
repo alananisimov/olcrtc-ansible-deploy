@@ -1,6 +1,5 @@
 # olcrtc client config example
-# Run with: olcrtc -config client.yaml
-# Any CLI flag (e.g. -key, -id) overrides the corresponding YAML field.
+# Run with: olcrtc client.yaml
 
 mode: cnc
 
@@ -11,7 +10,6 @@ auth:
 
 room:
   id: "ROOM_ID_HERE"   # must match the server
-  client_id: "default" # must match the server (deprecated)
 
 crypto:
   key: "REPLACE_ME_WITH_64_HEX_CHARS"   # must match the server

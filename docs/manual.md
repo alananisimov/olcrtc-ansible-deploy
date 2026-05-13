@@ -143,52 +143,43 @@ openssl rand -hex 32
 
 ---
 
-## Шаг 7: Придумать client ID
-
-Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение.
-
-```sh
-CLIENT_ID=default
-```
-
-Подойдёт любая короткая строка без пробелов: `home-laptop`, `android-01`, `archlinux`.
-
-Один `-client-id` технически может держать бесконечное количество одновременных соединений. Однако SFU ограничивает полосу пропускания на одного участника звонка, поэтому оптимально использовать схему **1 client-id = 1 пользователь** - но это не обязательное требование.
-
----
-
-## Шаг 8: Запустить сервер
+## Шаг 7: Запустить сервер
 
 На серверной машине (VPS и т.д.). Подбери нужную комбинацию carrier + transport из матрицы в [settings.md](settings.md).
 
 ### wbstream + datachannel (рекомендуется - максимальная скорость и пинг)
 
-Сначала создай руму вручную через сайт [wbstream](https://stream.wb.ru) (автогенерация через `-mode gen` для wbstream больше не поддерживается) и сохрани её ID:
+Сначала создай руму вручную через сайт [wbstream](https://stream.wb.ru) (автогенерация через `mode: gen` для wbstream больше не поддерживается) и сохрани её ID.
 
-```sh
-ROOM_ID="<room-id-со-stream.wb.ru>"
+Создай YAML конфиг:
+
+```yaml
+# server.yaml
+mode: srv
+link: direct
+auth:
+  provider: wbstream
+room:
+  id: "<room-id-со-stream.wb.ru>"
+crypto:
+  key: "d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799"
+net:
+  transport: datachannel
+  dns: "1.1.1.1:53"
+data: data
 ```
 
-Затем запусти сервер:
+Запусти:
 
 ```sh
-./build/olcrtc-linux-amd64 \
-  -mode srv \
-  -carrier wbstream \
-  -transport datachannel \
-  -id "$ROOM_ID" \
-  -client-id "$CLIENT_ID" \
-  -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data
+./build/olcrtc-linux-amd64 server.yaml
 ```
 
 Room ID нужно передать клиенту.
 
 ### Добавить отладку
 
-Добавь `--debug` к любой команде - увидишь каждое соединение:
+Добавь `debug: true` в YAML конфиг - увидишь каждое соединение:
 
 ```
 2026/05/03 08:05:23 Connecting link via direct/datachannel/wbstream...
@@ -200,60 +191,72 @@ Room ID нужно передать клиенту.
 
 ---
 
-## Шаг 9: Запустить клиент
+## Шаг 8: Запустить клиент
 
-На своей машине. Carrier, transport, id, `client-id` и key должны совпадать с сервером.
+На своей машине. Auth provider, transport, room ID и key должны совпадать с сервером.
 
 ### wbstream + datachannel
 
+```yaml
+# client.yaml
+mode: cnc
+link: direct
+auth:
+  provider: wbstream
+room:
+  id: "<room-id>"
+crypto:
+  key: "<hex-key>"
+net:
+  transport: datachannel
+  dns: "1.1.1.1:53"
+socks:
+  host: "127.0.0.1"
+  port: 8808
+data: data
+```
+
 ```sh
-./build/olcrtc-linux-amd64 \
-  -mode cnc \
-  -carrier wbstream \
-  -transport datachannel \
-  -id abc123xyz \
-  -client-id "$CLIENT_ID" \
-  -key <hex-key> \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-  -socks-host 127.0.0.1 \
-  -socks-port 1080
+./build/olcrtc-linux-amd64 client.yaml
 ```
 
 После старта в логах появится:
 
 ```
-SOCKS5 server listening on 127.0.0.1:1080
+SOCKS5 server listening on 127.0.0.1:8808
 ```
 
-Если нужно защитить прокси логином и паролем (например на машине с несколькими пользователями), добавь `-socks-user` и `-socks-pass`:
+Если нужно защитить прокси логином и паролем (например на машине с несколькими пользователями), добавь `socks.user` и `socks.pass` в конфиг:
 
-```sh
-./build/olcrtc-linux-amd64 \
-  -mode cnc \
-  -carrier wbstream \
-  -transport datachannel \
-  -id abc123xyz \
-  -client-id "$CLIENT_ID" \
-  -key <hex-key> \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-  -socks-host 127.0.0.1 \
-  -socks-port 1080 \
-  -socks-user myuser \
-  -socks-pass mypass
+```yaml
+# client.yaml
+mode: cnc
+link: direct
+auth:
+  provider: wbstream
+room:
+  id: "<room-id>"
+crypto:
+  key: "<hex-key>"
+net:
+  transport: datachannel
+  dns: "1.1.1.1:53"
+socks:
+  host: "127.0.0.1"
+  port: 8808
+  user: myuser
+  pass: mypass
+data: data
 ```
 
-Без этих флагов аутентификация отключена - поведение прежнее.
+Без этих полей аутентификация отключена - поведение прежнее.
 
 ---
 
-## Шаг 10: Проверить
+## Шаг 9: Проверить
 
 ```sh
-curl --socks5-hostname 127.0.0.1:1080 https://icanhazip.com
+curl --socks5-hostname 127.0.0.1:8808 https://icanhazip.com
 ```
 
 Должен вернуть IP сервера.
@@ -261,7 +264,7 @@ curl --socks5-hostname 127.0.0.1:1080 https://icanhazip.com
 Или выставить переменную чтобы весь трафик шёл через прокси:
 
 ```sh
-export all_proxy=socks5h://127.0.0.1:1080
+export all_proxy=socks5h://127.0.0.1:8808
 curl https://icanhazip.com
 ```
 
@@ -284,4 +287,4 @@ mage docker   # собрать образ через docker
 
 Используешь скрипты вместо ручной сборки? -> [Быстрый старт](fast.md)
 
-Все флаги и матрица совместимости -> [settings.md](settings.md)
+Все настройки и матрица совместимости -> [settings.md](settings.md)

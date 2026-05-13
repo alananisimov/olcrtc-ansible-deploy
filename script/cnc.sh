@@ -121,10 +121,6 @@ if [ -z "$ROOM_ID" ]; then
 fi
 
 echo ""
-read -p "Enter Client ID [default: default]: " CLIENT_ID_INPUT
-CLIENT_ID=${CLIENT_ID_INPUT:-default}
-
-echo ""
 read -p "Enter Encryption Key (hex): " KEY
 
 if [ -z "$KEY" ]; then
@@ -155,13 +151,19 @@ echo ""
 read -p "SOCKS5 username (leave empty to disable auth): " SOCKS_USER_INPUT
 SOCKS_USER=${SOCKS_USER_INPUT:-}
 
+SOCKS_PASS=""
 if [ -n "$SOCKS_USER" ]; then
     read -s -p "SOCKS5 password: " SOCKS_PASS_INPUT
     echo ""
     SOCKS_PASS=${SOCKS_PASS_INPUT:-}
 fi
 
-TRANSPORT_ARGS=()
+# Transport-specific settings
+VIDEO_W=1920; VIDEO_H=1080; VIDEO_FPS=30; VIDEO_BITRATE="2M"; VIDEO_HW="none"
+VIDEO_CODEC="qrcode"; VIDEO_QR_SIZE=0; VIDEO_QR_RECOVERY="low"
+VIDEO_TILE_MODULE=4; VIDEO_TILE_RS=20
+VP8_FPS=25; VP8_BATCH=1
+SEI_FPS=20; SEI_BATCH=1; SEI_FRAG=900; SEI_ACK=3000
 
 if [ "$TRANSPORT" = "videochannel" ]; then
     echo ""
@@ -185,8 +187,6 @@ if [ "$TRANSPORT" = "videochannel" ]; then
 
             read -p "Tile Reed-Solomon parity percent 0..200 [default: 20]: " VTILE_RS_INPUT
             VIDEO_TILE_RS=${VTILE_RS_INPUT:-20}
-
-            TRANSPORT_ARGS+=(-video-tile-module "$VIDEO_TILE_MODULE" -video-tile-rs "$VIDEO_TILE_RS")
             ;;
         *)
             VIDEO_CODEC="qrcode"
@@ -202,11 +202,6 @@ if [ "$TRANSPORT" = "videochannel" ]; then
 
             read -p "QR fragment size bytes [default: 0 (auto)]: " VQRSZ_INPUT
             VIDEO_QR_SIZE=${VQRSZ_INPUT:-0}
-
-            if [ "$VIDEO_QR_SIZE" -gt 0 ]; then
-                TRANSPORT_ARGS+=(-video-qr-size "$VIDEO_QR_SIZE")
-            fi
-            TRANSPORT_ARGS+=(-video-qr-recovery "$VIDEO_QR_RECOVERY")
             ;;
     esac
 
@@ -218,9 +213,6 @@ if [ "$TRANSPORT" = "videochannel" ]; then
 
     read -p "Hardware acceleration (none/nvenc) [default: none]: " VHW_INPUT
     VIDEO_HW=${VHW_INPUT:-none}
-
-    TRANSPORT_ARGS+=(-video-w "$VIDEO_W" -video-h "$VIDEO_H" -video-fps "$VIDEO_FPS" \
-        -video-bitrate "$VIDEO_BITRATE" -video-hw "$VIDEO_HW" -video-codec "$VIDEO_CODEC")
 fi
 
 if [ "$TRANSPORT" = "vp8channel" ]; then
@@ -232,8 +224,6 @@ if [ "$TRANSPORT" = "vp8channel" ]; then
 
     read -p "VP8 batch size (frames per tick) [default: 1]: " VP8BATCH_INPUT
     VP8_BATCH=${VP8BATCH_INPUT:-1}
-
-    TRANSPORT_ARGS+=(-vp8-fps "$VP8_FPS" -vp8-batch "$VP8_BATCH")
 fi
 
 if [ "$TRANSPORT" = "seichannel" ]; then
@@ -251,8 +241,6 @@ if [ "$TRANSPORT" = "seichannel" ]; then
 
     read -p "SEI ACK timeout in milliseconds [default: 3000]: " SEIACK_INPUT
     SEI_ACK=${SEIACK_INPUT:-3000}
-
-    TRANSPORT_ARGS+=(-fps "$SEI_FPS" -batch "$SEI_BATCH" -frag "$SEI_FRAG" -ack-ms "$SEI_ACK")
 fi
 
 echo ""
@@ -279,10 +267,70 @@ if [ ! -f "$WORK_DIR/olcrtc" ]; then
     exit 1
 fi
 
-AUTH_ARGS=()
+# Generate YAML config
+CONFIG_FILE="$WORK_DIR/client.yaml"
+cat > "$CONFIG_FILE" <<EOF
+mode: cnc
+link: direct
+auth:
+  provider: "$AUTH"
+room:
+  id: "$ROOM_ID"
+crypto:
+  key: "$KEY"
+net:
+  transport: "$TRANSPORT"
+  dns: "$DNS"
+socks:
+  host: "0.0.0.0"
+  port: $SOCKS_PORT
+EOF
+
 if [ -n "$SOCKS_USER" ]; then
-    AUTH_ARGS+=(-socks-user "$SOCKS_USER" -socks-pass "$SOCKS_PASS")
+    cat >> "$CONFIG_FILE" <<EOF
+  user: "$SOCKS_USER"
+  pass: "$SOCKS_PASS"
+EOF
 fi
+
+if [ "$TRANSPORT" = "vp8channel" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+vp8:
+  fps: $VP8_FPS
+  batch_size: $VP8_BATCH
+EOF
+fi
+
+if [ "$TRANSPORT" = "seichannel" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+sei:
+  fps: $SEI_FPS
+  batch_size: $SEI_BATCH
+  fragment_size: $SEI_FRAG
+  ack_timeout_ms: $SEI_ACK
+EOF
+fi
+
+if [ "$TRANSPORT" = "videochannel" ]; then
+    cat >> "$CONFIG_FILE" <<EOF
+video:
+  width: $VIDEO_W
+  height: $VIDEO_H
+  fps: $VIDEO_FPS
+  bitrate: "$VIDEO_BITRATE"
+  hw: $VIDEO_HW
+  codec: $VIDEO_CODEC
+  qr_size: $VIDEO_QR_SIZE
+  qr_recovery: $VIDEO_QR_RECOVERY
+  tile_module: $VIDEO_TILE_MODULE
+  tile_rs: $VIDEO_TILE_RS
+EOF
+fi
+
+cat >> "$CONFIG_FILE" <<EOF
+data: data
+debug: false
+EOF
 
 echo "[*] Starting OlcRTC client..."
 podman run -d \
@@ -293,9 +341,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode cnc -auth "$AUTH" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
-        -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
-        -socks-host 0.0.0.0 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}" "${AUTH_ARGS[@]}"
+    ./olcrtc client.yaml
 
 sleep 2
 
@@ -306,7 +352,6 @@ echo "Container name: $CONTAINER_NAME"
 echo "Auth:           $AUTH"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
-echo "Client ID:      $CLIENT_ID"
 if [ -n "$SOCKS_USER" ]; then
 echo "SOCKS5 proxy:   $SOCKS_IP:$SOCKS_PORT (auth: $SOCKS_USER)"
 else
