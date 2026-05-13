@@ -111,7 +111,7 @@ echo ""
 
 GEN_ROOM=0
 
-if [ "$CARRIER" = "jazz" ] || [ "$CARRIER" = "wbstream" ]; then
+if [ "$CARRIER" = "jazz" ]; then
     echo "Room options:"
     echo "  1) Auto-generate new room (recommended)"
     echo "  2) Use specific room ID"

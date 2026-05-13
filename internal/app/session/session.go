@@ -13,9 +13,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/link/direct"
-	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
@@ -458,22 +456,6 @@ func Gen(ctx context.Context, cfg Config, out func(string)) error {
 			})
 			if err != nil {
 				return fmt.Errorf("gen jazz room %d: %w", i+1, err)
-			}
-			out(roomID)
-		}
-	case carrierWBStream:
-		for i := range cfg.Amount {
-			var roomID string
-			err := genRetry(ctx, func(ctx context.Context) error {
-				var err error
-				roomID, err = wbstream.CreateRoom(ctx, names.Generate())
-				if err != nil {
-					return fmt.Errorf("wbstream.CreateRoom: %w", err)
-				}
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("gen wbstream room %d: %w", i+1, err)
 			}
 			out(roomID)
 		}

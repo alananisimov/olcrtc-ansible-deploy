@@ -163,14 +163,11 @@ CLIENT_ID=default
 
 ### wbstream + datachannel (рекомендуется - максимальная скорость и пинг)
 
-Сначала сгенерируй Room ID:
+Сначала создай руму вручную через сайт [wbstream](https://stream.wb.ru) (автогенерация через `-mode gen` для wbstream больше не поддерживается) и сохрани её ID:
 
 ```sh
-ROOM_ID=$(./build/olcrtc-linux-amd64 -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data data)
-echo "Room ID: $ROOM_ID"
+ROOM_ID="<room-id-со-stream.wb.ru>"
 ```
-
-Или создай руму вручную через сайт [wbstream](https://stream.wb.ru).
 
 Затем запусти сервер:
 

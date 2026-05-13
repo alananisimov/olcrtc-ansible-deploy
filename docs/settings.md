@@ -56,20 +56,17 @@
 
 ## -mode gen
 
-Генерирует Room ID заранее, не запуская сервер. Поддерживается для `jazz` и `wbstream`.
+Генерирует Room ID заранее, не запуская сервер. Поддерживается только для `jazz`. Для `wbstream` создавай руму вручную через [stream.wb.ru](https://stream.wb.ru) (автогенерация отключена со стороны WB).
 
 **Обязательные флаги:**
 
 | Флаг | Описание |
 |------|----------|
-| `-carrier` | `jazz` или `wbstream` |
+| `-carrier` | `jazz` |
 | `-dns` | DNS-сервер |
 | `-amount` | Количество комнат |
 
 ```sh
-./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1
-# abc123xyz
-
 ./olcrtc -mode gen -carrier jazz -dns 1.1.1.1:53 -amount 3
 # room-id-1
 # room-id-2
@@ -158,8 +155,8 @@
 ### wbstream + datachannel (рекомендуется - максимальная скорость, без бана)
 
 ```sh
-# сгенерировать room ID
-ROOM_ID=$(./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data data)
+# room ID нужно создать вручную через https://stream.wb.ru
+ROOM_ID="<room-id-со-stream.wb.ru>"
 
 # сервер
 ./olcrtc -mode srv -carrier wbstream -transport datachannel \

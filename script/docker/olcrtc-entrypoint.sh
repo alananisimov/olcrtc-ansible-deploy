@@ -63,7 +63,7 @@ vp8_batch="${OLCRTC_VP8_BATCH:-0}"
 
 if [ -z "$room_id" ]; then
     case "$carrier" in
-        jazz|wbstream)
+        jazz)
             echo "olcrtc-entrypoint: OLCRTC_ROOM_ID not set, generating room via -mode gen..." >&2
             room_id=$(/usr/local/bin/olcrtc -mode gen -carrier "$carrier" -dns "$dns_server" -amount 1 -data "$data_dir")
             [ -n "$room_id" ] || die "room generation failed for carrier '$carrier'"
