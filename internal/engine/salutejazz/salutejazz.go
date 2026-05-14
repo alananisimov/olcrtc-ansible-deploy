@@ -203,6 +203,15 @@ func (s *Session) attachPendingVideoTracks() error {
 		if err := s.ensurePublisherAudioTrackLocked(); err != nil {
 			return err
 		}
+		for _, track := range s.videoTracks {
+			if track == nil || track.Kind() != webrtc.RTPCodecTypeVideo {
+				continue
+			}
+			if _, err := s.pcPub.AddTrack(track); err != nil {
+				return fmt.Errorf("add video track: %w", err)
+			}
+			s.videoOffered.Store(true)
+		}
 	}
 	return nil
 }
@@ -683,6 +692,10 @@ func (s *Session) sendPublisherOffer() {
 		logger.Debugf("send publisher track add error: %v", err)
 		return
 	}
+	if err := s.sendPublisherVideoTrackAdds(); err != nil {
+		logger.Debugf("send publisher video track add error: %v", err)
+		return
+	}
 
 	offer, err := s.pcPub.CreateOffer(nil)
 	if err != nil {
@@ -695,6 +708,7 @@ func (s *Session) sendPublisherOffer() {
 		return
 	}
 
+	logger.Infof("[salutejazz] send publisher offer audio=%t video=%t", s.publisherHasAudioTrack(), s.videoOffered.Load())
 	s.wsMu.Lock()
 	_ = s.ws.WriteJSON(map[string]any{
 		keyRoomID:    s.roomID,
@@ -723,71 +737,9 @@ func (s *Session) sendPublisherAudioTrackAdd() error {
 	return nil
 }
 
-func (s *Session) sendPublisherVideoOffer() {
-	tracks, ok := s.addPublisherVideoTracks()
-	if !ok {
-		return
-	}
-
-	for _, track := range tracks {
-		if track == nil || track.Kind() != webrtc.RTPCodecTypeVideo {
-			continue
-		}
-		if err := s.sendPublisherTrackAdd(trackTypeVideo, trackSourceCam, true); err != nil {
-			logger.Debugf("send publisher video track add error: %v", err)
-			return
-		}
-	}
-
-	offer, err := s.pcPub.CreateOffer(nil)
-	if err != nil {
-		logger.Debugf("create pub video offer error: %v", err)
-		return
-	}
-	if err := s.pcPub.SetLocalDescription(offer); err != nil {
-		logger.Debugf("set local pub video desc error: %v", err)
-		return
-	}
-
-	s.wsMu.Lock()
-	_ = s.ws.WriteJSON(map[string]any{
-		keyRoomID:    s.roomID,
-		keyEvent:     eventMediaIn,
-		keyGroupID:   s.getGroupID(),
-		keyRequestID: uuid.New().String(),
-		keyPayload: map[string]any{
-			payloadMethod: methodOffer,
-			payloadDesc: map[string]any{
-				payloadType: payloadOffer,
-				payloadSDP:  offer.SDP,
-			},
-		},
-	})
-	s.wsMu.Unlock()
-}
-
-func (s *Session) addPublisherVideoTracks() ([]webrtc.TrackLocal, bool) {
-	s.videoTrackMu.Lock()
-	defer s.videoTrackMu.Unlock()
-
-	if s.videoOffered.Load() {
-		return nil, false
-	}
-	tracks := append([]webrtc.TrackLocal(nil), s.videoTracks...)
-	for _, track := range tracks {
-		if track == nil || track.Kind() != webrtc.RTPCodecTypeVideo {
-			continue
-		}
-		if _, err := s.pcPub.AddTrack(track); err != nil {
-			logger.Debugf("add publisher video track error: %v", err)
-			return nil, false
-		}
-	}
-	s.videoOffered.Store(true)
-	return tracks, true
-}
-
 func (s *Session) sendPublisherTrackAdd(trackType, source string, muted bool) error {
+	logger.Infof("[salutejazz] send track add type=%s source=%s muted=%t", trackType, source, muted)
+
 	s.wsMu.Lock()
 	defer s.wsMu.Unlock()
 
@@ -811,6 +763,28 @@ func (s *Session) sendPublisherTrackAdd(trackType, source string, muted bool) er
 	return nil
 }
 
+func (s *Session) sendPublisherVideoTrackAdds() error {
+	s.videoTrackMu.RLock()
+	tracks := append([]webrtc.TrackLocal(nil), s.videoTracks...)
+	s.videoTrackMu.RUnlock()
+
+	for _, track := range tracks {
+		if track == nil || track.Kind() != webrtc.RTPCodecTypeVideo {
+			continue
+		}
+		if err := s.sendPublisherTrackAdd(trackTypeVideo, trackSourceCam, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Session) publisherHasAudioTrack() bool {
+	s.videoTrackMu.RLock()
+	defer s.videoTrackMu.RUnlock()
+	return s.audioTrack != nil
+}
+
 func (s *Session) handleParticipantsUpdate(payload map[string]any) {
 	if !s.hasLocalVideoTracks() || !s.videoOffered.Load() {
 		return
@@ -818,15 +792,18 @@ func (s *Session) handleParticipantsUpdate(payload map[string]any) {
 
 	track, ok := publisherCameraTrack(payload)
 	if !ok {
-		return
-	}
-
-	if muted, _ := track[payloadMuted].(bool); !muted {
-		s.cameraUnmuted.Store(true)
+		logger.Infof("[salutejazz] participants update without local publisher camera track")
 		return
 	}
 
 	sid, _ := track["sid"].(string)
+	if muted, _ := track[payloadMuted].(bool); !muted {
+		logger.Infof("[salutejazz] publisher camera already unmuted sid=%s", sid)
+		s.cameraUnmuted.Store(true)
+		return
+	}
+
+	logger.Infof("[salutejazz] publisher camera track sid=%s muted=true, sending unmute", sid)
 	if sid == "" || !s.cameraUnmuted.CompareAndSwap(false, true) {
 		return
 	}
@@ -861,6 +838,8 @@ func publisherCameraTrack(payload map[string]any) (map[string]any, bool) {
 }
 
 func (s *Session) sendTrackMuted(sid string, muted bool) error {
+	logger.Infof("[salutejazz] send track muted sid=%s muted=%t", sid, muted)
+
 	s.wsMu.Lock()
 	defer s.wsMu.Unlock()
 
@@ -948,10 +927,7 @@ func (s *Session) handlePublisherAnswer(payload map[string]any) {
 		return
 	}
 
-	if s.hasLocalVideoTracks() && !s.videoOffered.Load() {
-		s.sendPublisherVideoOffer()
-		return
-	}
+	logger.Infof("[salutejazz] publisher answer received video=%t", s.videoOffered.Load())
 	if s.videoOffered.Load() {
 		closeSignal(s.videoNegotiated)
 	}
@@ -1086,11 +1062,14 @@ func (s *Session) AddVideoTrack(track webrtc.TrackLocal) error {
 	if s.pcPub == nil {
 		return nil
 	}
-	if !s.videoOffered.Load() {
+	if !s.publisherStarted.Load() {
+		if track != nil && track.Kind() == webrtc.RTPCodecTypeVideo {
+			if _, err := s.pcPub.AddTrack(track); err != nil {
+				return fmt.Errorf("failed to add track: %w", err)
+			}
+			s.videoOffered.Store(true)
+		}
 		return nil
-	}
-	if _, err := s.pcPub.AddTrack(track); err != nil {
-		return fmt.Errorf("failed to add track: %w", err)
 	}
 	return nil
 }
