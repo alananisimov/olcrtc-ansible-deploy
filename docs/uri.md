@@ -113,13 +113,13 @@ Payload не используется.
 
 ## Примеры
 
-### wbstream + datachannel (только с permission rights)
+### wbstream + datachannel (не работает в обычном guest flow)
 
 ```text
 olcrtc://wbstream?datachannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799$RU / olc free sub / IPv6
 ```
 
-Payload не нужен - datachannel параметров не имеет. Для WBStream этот режим не рекомендуется в обычном guest flow: участникам нужны права на отправку data packets (`canPublishData=true`), обычно через модераторские/permission права комнаты.
+Payload не нужен - datachannel параметров не имеет. Для WBStream этот режим **не работает** в обычном guest flow: WB Stream выдаёт токены с `canPublishData=false`, и DC не маршрутизирует данные.
 
 ### Эквивалент YAML
 

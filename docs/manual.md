@@ -10,7 +10,7 @@
 # Мануальная сборка
 
 Этот способ для тех кто хочет собрать бинарник руками без Docker/Podman.
-Нужен Go 1.26+, mage, git.
+Нужен Go 1.25+, mage, git.
 
 Проект в бете. По проблемам: t.me/openlibrecommunity
 
@@ -26,7 +26,7 @@ dnf install git       # Fedora / RHEL   / CentOS
 
 ---
 
-## Шаг 2: Установить Go 1.26+
+## Шаг 2: Установить Go 1.25+
 
 ### Arch / Fedora (всё просто)
 
@@ -51,28 +51,26 @@ Pin-Priority: 100
 EOF
 
 sudo apt update
-sudo apt install -t testing golang-1.26
+sudo apt install -t testing golang-go
 
 sudo update-alternatives --install /usr/bin/go go `which go` 10
 sudo update-alternatives --install /usr/bin/gofmt gofmt `which gofmt` 10
-sudo update-alternatives --install /usr/bin/go go /usr/lib/go-1.26/bin/go 20
-sudo update-alternatives --install /usr/bin/gofmt gofmt /usr/lib/go-1.26/bin/gofmt 20
 ```
 
 Иначе через SDK:
 
 ```sh
 apt install golang                         # ставим старый go - он нужен только чтобы скачать новый
-go install golang.org/dl/go1.26.0@latest   # скачиваем установщик go1.26
-~/go/bin/go1.26.0 download                 # скачиваем сам go1.26
-mv ~/go/bin/go1.26.0 /usr/local/bin/go     # заменяем системный go
+go install golang.org/dl/go1.25.0@latest   # скачиваем установщик go1.25
+~/go/bin/go1.25.0 download                 # скачиваем сам go1.25
+mv ~/go/bin/go1.25.0 /usr/local/bin/go     # заменяем системный go
 ```
 
 ### Проверка
 
 ```sh
 go version
-# go version go1.26.x linux/amd64
+# go version go1.25.x linux/amd64
 ```
 
 ---
@@ -151,7 +149,7 @@ openssl rand -hex 32
 
 Сначала создай руму вручную через сайт [wbstream](https://stream.wb.ru) (автогенерация через `mode: gen` для wbstream больше не поддерживается) и сохрани её ID.
 
-`wbstream + datachannel` поддерживается только если участникам выданы права на отправку data packets (`canPublishData=true`), обычно через модераторские/permission права комнаты. В обычном guest flow DC не рекомендуется.
+`wbstream + datachannel` **не работает** в обычном guest flow — WB Stream выдаёт токены с `canPublishData=false`, и DC не маршрутизирует данные. Для обычного использования выбирай `vp8channel`.
 
 Создай YAML конфиг:
 
@@ -276,13 +274,16 @@ curl https://icanhazip.com
 
 ```sh
 mage build    # собрать для текущей платформы
+mage buildCLI # собрать только CLI бинарник
 mage cross    # собрать для всех платформ
 mage deps     # скачать и обновить зависимости
 mage clean    # удалить build/
 mage test     # запустить тесты
+mage e2e      # запустить E2E тесты (нужны реальные провайдеры)
 mage lint     # запустить линтер
 mage podman   # собрать образ через podman
 mage docker   # собрать образ через docker
+mage mobile   # собрать Android AAR
 ```
 
 ---

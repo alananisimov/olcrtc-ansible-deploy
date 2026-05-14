@@ -14,18 +14,23 @@
 
 | Transport | telemost | jazz | wbstream |
 |-----------|:--------:|:----:|:--------:|
-| datachannel | - | * | ! |
-| vp8channel | + | + | + |
-| seichannel | - | + | + |
-| videochannel | + | + | + |
+| datachannel | - | ~ | ~ |
+| vp8channel | + | - | + |
+| seichannel | - | - | + |
+| videochannel | + | - | + |
 
 **Легенда:**
-- `+` - работает
-- `-` - не поддерживается
-- `*` - работает, но не желательно
-- `!` - работает только если участникам выданы права на отправку data packets (`canPublishData`), обычно через модераторские права
+- `+` - работает (pass в E2E тестах)
+- `-` - не работает / не поддерживается (fail в E2E тестах)
+- `~` - нестабильно (может работать, но нестабильно)
 
-**Рекомендуемая комбинация для wbstream: `wbstream + vp8channel`**. `wbstream + datachannel` быстрый, но в обычном guest/anonymous flow WB Stream выдаёт токены с `canPublishData=false`; без выдачи участникам модераторских/permission прав DC не маршрутизирует данные и поэтому не рекомендуется.
+**Jazz:** только datachannel проходит E2E тесты. Все non-data транспорты (vp8channel, seichannel, videochannel) не работают — Jazz не поддерживает VideoTrack для туннелирования. Кроме того, Jazz **банит IP** за паттерны datachannel трафика.
+
+**Telemost:** только vp8channel стабильно проходит. DataChannel удалён из Telemost. seichannel не поддерживается. videochannel — best effort.
+
+**WBStream:** все транспорты кроме datachannel работают. DataChannel в обычном guest flow без выдавания модератора не работает — WB Stream выдаёт токены с `canPublishData=false`, и DC не маршрутизирует данные.
+
+**Рекомендуемая комбинация: `wbstream + vp8channel`** — работает стабильно, не требует специальных прав.
 
 Скорость по убыванию: `datachannel` > `vp8channel` > `seichannel` > `videochannel`
 
@@ -163,9 +168,9 @@ gen:
 
 ## Готовые конфиги
 
-### wbstream + datachannel (не рекомендуется без модераторских прав)
+### wbstream + datachannel (не работает в обычном guest flow)
 
-WB Stream DataChannel работает только когда участникам выданы права на отправку data packets (`canPublishData=true`), обычно через модераторские/permission права комнаты. В обычном guest flow WB Stream может выдавать токены с `canPublishData=false`, тогда соединение поднимется, но данные через DC не пойдут. Для обычного использования выбирай `vp8channel`, `seichannel` или `videochannel`.
+WB Stream DataChannel **не работает** в обычном guest flow — WB Stream выдаёт токены с `canPublishData=false`, и DC не маршрутизирует данные. Этот режим помечен как expected fail в E2E тестах. Для обычного использования выбирай `vp8channel`, `seichannel` или `videochannel`.
 
 ```yaml
 # room ID нужно создать вручную через https://stream.wb.ru
@@ -204,7 +209,7 @@ socks:
 data: data
 ```
 
-### wbstream + datachannel + SOCKS5 аутентификация (только с модераторскими правами)
+### wbstream + datachannel + SOCKS5 аутентификация (не работает в обычном guest flow)
 
 ```yaml
 # client.yaml с логином и паролем на прокси
@@ -279,7 +284,9 @@ vp8:
 data: data
 ```
 
-### telemost + seichannel
+### telemost + seichannel (не работает)
+
+> ⚠️ Эта комбинация помечена как expected fail в E2E тестах. Telemost не поддерживает seichannel.
 
 ```yaml
 # server.yaml
@@ -326,7 +333,7 @@ sei:
 data: data
 ```
 
-### telemost + videochannel (крайний случай)
+### telemost + videochannel (best effort, нестабильно)
 
 ```yaml
 # server.yaml
