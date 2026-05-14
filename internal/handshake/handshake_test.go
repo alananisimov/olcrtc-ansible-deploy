@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+const testSessionID = "sess-42"
+
+var errNope = errors.New("nope")
+
 func pair(t *testing.T) (net.Conn, net.Conn) {
 	t.Helper()
 	a, b := net.Pipe()
@@ -29,12 +33,12 @@ func TestHandshakeRoundTrip(t *testing.T) {
 			if claims["plan"] != "pro" {
 				t.Errorf("claims = %v", claims)
 			}
-			return "sess-42", nil
+			return testSessionID, nil
 		})
 		if err != nil {
 			t.Errorf("Server: %v", err)
 		}
-		if hello.DeviceID != "dev-1" || sid != "sess-42" {
+		if hello.DeviceID != "dev-1" || sid != testSessionID {
 			t.Errorf("Server returned hello=%+v sid=%q", hello, sid)
 		}
 	}()
@@ -43,7 +47,7 @@ func TestHandshakeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Client: %v", err)
 	}
-	if sid != "sess-42" {
+	if sid != testSessionID {
 		t.Fatalf("session id = %q, want sess-42", sid)
 	}
 }
@@ -53,7 +57,7 @@ func TestHandshakeRejected(t *testing.T) {
 
 	go func() {
 		_, _, _ = Server(sConn, func(string, map[string]any) (string, error) {
-			return "", errors.New("nope")
+			return "", errNope
 		})
 	}()
 

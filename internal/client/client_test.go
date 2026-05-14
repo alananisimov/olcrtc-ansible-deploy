@@ -18,6 +18,11 @@ import (
 
 var errUnexpectedConnectRequest = errors.New("unexpected connect request")
 
+const (
+	testConnectCommand = "connect"
+	testConnectHost    = "example.com"
+)
+
 func TestSetupCipher(t *testing.T) {
 	keyHex := "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	cipher, err := setupCipher(keyHex)
@@ -384,7 +389,6 @@ func TestReadSocks5AddrReadErrors(t *testing.T) {
 	}
 }
 
-//nolint:cyclop // table-driven test naturally has many branches
 func TestSendConnectRequestOverSmux(t *testing.T) {
 	a, b := net.Pipe()
 	defer func() {
@@ -417,7 +421,7 @@ func TestSendConnectRequestOverSmux(t *testing.T) {
 			done <- err
 			return
 		}
-		if req["cmd"] != "connect" || req["addr"] != "example.com" { //nolint:goconst,lll // test literal, repetition is intentional
+		if req["cmd"] != testConnectCommand || req["addr"] != testConnectHost {
 			done <- errUnexpectedConnectRequest
 			return
 		}
@@ -432,7 +436,7 @@ func TestSendConnectRequestOverSmux(t *testing.T) {
 	defer func() { _ = stream.Close() }()
 
 	c := &Client{deviceID: "client-1"}
-	if err := c.sendConnectRequest(stream, "example.com", 443); err != nil {
+	if err := c.sendConnectRequest(stream, testConnectHost, 443); err != nil {
 		t.Fatalf("sendConnectRequest() error = %v", err)
 	}
 	if err := <-done; err != nil {

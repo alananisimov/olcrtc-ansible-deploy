@@ -27,7 +27,18 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-const testKeyHex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+const (
+	testKeyHex         = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+	transportData      = "datachannel"
+	transportVideo     = "videochannel"
+	transportSEI       = "seichannel"
+	transportVP8       = "vp8channel"
+	linkDirect         = "direct"
+	testRoom           = "room"
+	localDNSServer     = "127.0.0.1:53"
+	videoHWNone        = "none"
+	testClientDeviceID = "client-1"
+)
 
 var (
 	errRealE2ENotReady       = errors.New("real e2e client did not become ready")
@@ -330,16 +341,16 @@ func builtInCarrierNames() []string {
 }
 
 func builtInTransportNames() []string {
-	return []string{"datachannel", "videochannel", "seichannel", "vp8channel"}
+	return []string{transportData, transportVideo, transportSEI, transportVP8}
 }
 
 func realE2ECaseExpectation(carrierName, transportName string) realE2EExpectation {
 	switch carrierName {
 	case "telemost":
 		switch transportName {
-		case "vp8channel":
+		case transportVP8:
 			return realE2EExpectPass
-		case "videochannel":
+		case transportVideo:
 			return realE2EBestEffort
 		default:
 			return realE2EExpectFail
@@ -347,7 +358,7 @@ func realE2ECaseExpectation(carrierName, transportName string) realE2EExpectatio
 	case "wbstream":
 		return realE2EExpectPass
 	case "jazz":
-		if transportName == "datachannel" {
+		if transportName == transportData {
 			return realE2EExpectFail
 		}
 		return realE2EExpectPass
@@ -362,8 +373,10 @@ func realE2EExpectationLabel(expectation realE2EExpectation) string {
 		return "SUCCESS"
 	case realE2EBestEffort:
 		return "BEST EFFORT"
-	default:
+	case realE2EExpectFail:
 		return "EXPECTED FAIL"
+	default:
+		return "UNKNOWN"
 	}
 }
 
@@ -377,31 +390,31 @@ func TestRealE2ECaseExpectation(t *testing.T) {
 		{
 			name:      "jazz datachannel is expected to fail",
 			carrier:   "jazz",
-			transport: "datachannel",
+			transport: transportData,
 			want:      realE2EExpectFail,
 		},
 		{
 			name:      "jazz videochannel is expected to pass",
 			carrier:   "jazz",
-			transport: "videochannel",
+			transport: transportVideo,
 			want:      realE2EExpectPass,
 		},
 		{
 			name:      "telemost datachannel is expected to fail",
 			carrier:   "telemost",
-			transport: "datachannel",
+			transport: transportData,
 			want:      realE2EExpectFail,
 		},
 		{
 			name:      "telemost vp8channel is expected to pass",
 			carrier:   "telemost",
-			transport: "vp8channel",
+			transport: transportVP8,
 			want:      realE2EExpectPass,
 		},
 		{
 			name:      "wbstream datachannel is expected to pass",
 			carrier:   "wbstream",
-			transport: "datachannel",
+			transport: transportData,
 			want:      realE2EExpectPass,
 		},
 	}
@@ -474,19 +487,19 @@ func requireRealRoom(ctx context.Context, t *testing.T, carrierName string) stri
 func validSessionConfig(mode, carrierName, transportName string) session.Config {
 	return session.Config{
 		Mode:            mode,
-		Link:            "direct",
+		Link:            linkDirect,
 		Transport:       transportName,
 		Auth:            carrierName,
-		RoomID:          "room",
+		RoomID:          testRoom,
 		KeyHex:          testKeyHex,
 		SOCKSHost:       "127.0.0.1",
 		SOCKSPort:       1080,
-		DNSServer:       "127.0.0.1:53",
+		DNSServer:       localDNSServer,
 		VideoWidth:      1080,
 		VideoHeight:     1080,
 		VideoFPS:        30,
 		VideoBitrate:    "1M",
-		VideoHW:         "none",
+		VideoHW:         videoHWNone,
 		VideoCodec:      "tile",
 		VideoTileModule: 4,
 		VideoTileRS:     20,
@@ -504,7 +517,7 @@ func validLinkConfig(carrierName, transportName string) link.Config {
 	return link.Config{
 		Transport:       cfg.Transport,
 		Carrier:         cfg.Auth,
-		RoomURL:         "room",
+		RoomURL:         testRoom,
 		DeviceID:        "e2e-link-test",
 		Name:            "e2e-" + carrierName + "-" + transportName,
 		DNSServer:       cfg.DNSServer,
@@ -583,7 +596,7 @@ type tunnelRuntime struct {
 	stopWait  time.Duration
 }
 
-func startTunnel(t *testing.T, deviceID, _ string) *tunnelRuntime {
+func startTunnel(t *testing.T) *tunnelRuntime {
 	t.Helper()
 
 	carrierName, room := registerMemoryCarrier(t)
@@ -594,12 +607,12 @@ func startTunnel(t *testing.T, deviceID, _ string) *tunnelRuntime {
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.Run(ctx, server.Config{
-			Link:      "direct",
-			Transport: "datachannel",
+			Link:      linkDirect,
+			Transport: transportData,
 			Carrier:   carrierName,
-			RoomURL:   "room",
+			RoomURL:   testRoom,
 			KeyHex:    testKeyHex,
-			DNSServer: "127.0.0.1:53",
+			DNSServer: localDNSServer,
 		})
 	}()
 	room.waitConnected(t, 1)
@@ -608,14 +621,14 @@ func startTunnel(t *testing.T, deviceID, _ string) *tunnelRuntime {
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(ctx, client.Config{
-			Link:      "direct",
-			Transport: "datachannel",
+			Link:      linkDirect,
+			Transport: transportData,
 			Carrier:   carrierName,
-			RoomURL:   "room",
+			RoomURL:   testRoom,
 			KeyHex:    testKeyHex,
-			DeviceID:  deviceID,
+			DeviceID:  testClientDeviceID,
 			LocalAddr: socksAddr,
-			DNSServer: "127.0.0.1:53",
+			DNSServer: localDNSServer,
 		}, func() { close(ready) })
 	}()
 	waitForReady(t, ready)
@@ -646,17 +659,17 @@ func startRealTunnel(
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.Run(runCtx, server.Config{
-			Link:            "direct",
+			Link:            linkDirect,
 			Transport:       transportName,
 			Carrier:         carrierName,
 			RoomURL:         roomURL,
 			KeyHex:          testKeyHex,
-			DNSServer:       "127.0.0.1:53",
+			DNSServer:       localDNSServer,
 			VideoWidth:      1080,
 			VideoHeight:     1080,
 			VideoFPS:        60,
 			VideoBitrate:    "5000k",
-			VideoHW:         "none",
+			VideoHW:         videoHWNone,
 			VideoQRSize:     512,
 			VideoQRRecovery: "low",
 			VideoCodec:      "qrcode",
@@ -685,19 +698,19 @@ func startRealTunnel(
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(runCtx, client.Config{
-			Link:            "direct",
+			Link:            linkDirect,
 			Transport:       transportName,
 			Carrier:         carrierName,
 			RoomURL:         roomURL,
 			KeyHex:          testKeyHex,
 			DeviceID:        clientDeviceID,
 			LocalAddr:       socksAddr,
-			DNSServer:       "127.0.0.1:53",
+			DNSServer:       localDNSServer,
 			VideoWidth:      1080,
 			VideoHeight:     1080,
 			VideoFPS:        60,
 			VideoBitrate:    "5000k",
-			VideoHW:         "none",
+			VideoHW:         videoHWNone,
 			VideoQRSize:     512,
 			VideoQRRecovery: "low",
 			VideoCodec:      "qrcode",
@@ -869,7 +882,7 @@ func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
 		t.Run(carrierName, func(t *testing.T) {
 			for _, transportName := range builtInTransportNames() {
 				t.Run(transportName, func(t *testing.T) {
-					ln, err := link.New(context.Background(), "direct", validLinkConfig(carrierName, transportName))
+					ln, err := link.New(context.Background(), linkDirect, validLinkConfig(carrierName, transportName))
 					if err != nil {
 						t.Fatalf("link.New() error = %v", err)
 					}
@@ -891,9 +904,9 @@ func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
 
 	for _, carrierName := range builtInCarrierNames() {
 		t.Run(carrierName, func(t *testing.T) {
-			for _, transportName := range []string{"datachannel", "seichannel"} {
+			for _, transportName := range []string{transportData, transportSEI} {
 				t.Run(transportName, func(t *testing.T) {
-					ln, err := link.New(context.Background(), "direct", validLinkConfig(carrierName, transportName))
+					ln, err := link.New(context.Background(), linkDirect, validLinkConfig(carrierName, transportName))
 					if err != nil {
 						t.Fatalf("link.New() error = %v", err)
 					}
@@ -964,7 +977,7 @@ func runRealE2ECase(t *testing.T, carrierName, transportName, roomURL, echoAddr 
 	ctx, cancel := context.WithTimeout(context.Background(), *realE2ETimeout)
 	defer cancel()
 
-	rt, err := startRealTunnel(ctx, t, carrierName, transportName, roomURL, "client-1", "client-1")
+	rt, err := startRealTunnel(ctx, t, carrierName, transportName, roomURL, testClientDeviceID, testClientDeviceID)
 	if err != nil {
 		return err
 	}
@@ -999,7 +1012,7 @@ func runRealE2ECase(t *testing.T, carrierName, transportName, roomURL, echoAddr 
 
 func TestClientServerSOCKSTunnelOverMemoryDatachannel(t *testing.T) {
 	echoAddr := startEchoServer(t)
-	rt := startTunnel(t, "client-1", "client-1")
+	rt := startTunnel(t)
 	defer rt.stop(t)
 
 	conn := connectViaSOCKS(t, rt.socksAddr, echoAddr)
@@ -1023,7 +1036,7 @@ func TestClientServerSOCKSTunnelOverMemoryDatachannel(t *testing.T) {
 
 func TestFrequentReconnectsStillAllowNewSOCKSConnections(t *testing.T) {
 	echoAddr := startEchoServer(t)
-	rt := startTunnel(t, "client-1", "client-1")
+	rt := startTunnel(t)
 	defer rt.stop(t)
 
 	for i := range 5 {
@@ -1050,7 +1063,7 @@ func TestFrequentReconnectsStillAllowNewSOCKSConnections(t *testing.T) {
 }
 
 func TestEndedCallbackStopsClientAndServer(t *testing.T) {
-	rt := startTunnel(t, "client-1", "client-1")
+	rt := startTunnel(t)
 	rt.room.triggerEnded("conference ended")
 	rt.waitStopped(t)
 }
@@ -1144,7 +1157,7 @@ func tryConnectViaSOCKS(socksAddr, targetAddr string) (net.Conn, error) {
 
 func TestLargeTransferOverTunnel(t *testing.T) {
 	echoAddr := startEchoServer(t)
-	rt := startTunnel(t, "client-1", "client-1")
+	rt := startTunnel(t)
 	defer rt.stop(t)
 
 	size := int64(32 << 20)

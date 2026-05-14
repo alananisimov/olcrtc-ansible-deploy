@@ -15,6 +15,8 @@
 // After the exchange the control stream stays open; tunnel traffic flows over
 // additional smux streams opened by the client. The control stream may carry
 // keepalives or future control messages.
+//
+//nolint:tagliatelle // JSON keys are the stable wire protocol schema.
 package handshake
 
 import (
@@ -117,25 +119,35 @@ func Client(rw io.ReadWriter, deviceID string, claims map[string]any) (string, e
 	}
 
 	switch probe.Type {
+	case TypeHello:
+		return "", fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type)
 	case TypeWelcome:
-		var w Welcome
-		if err := json.Unmarshal(raw, &w); err != nil {
-			return "", fmt.Errorf("parse welcome: %w", err)
-		}
-		if w.Version != ProtoVersion {
-			return "", fmt.Errorf("%w: server v%d, client v%d",
-				ErrProtocolVersion, w.Version, ProtoVersion)
-		}
-		return w.SessionID, nil
+		return parseWelcome(raw)
 	case TypeReject:
-		var r Reject
-		if err := json.Unmarshal(raw, &r); err != nil {
-			return "", fmt.Errorf("parse reject: %w", err)
-		}
-		return "", fmt.Errorf("%w: %s", ErrRejected, r.Reason)
+		return parseReject(raw)
 	default:
 		return "", fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type)
 	}
+}
+
+func parseWelcome(raw []byte) (string, error) {
+	var w Welcome
+	if err := json.Unmarshal(raw, &w); err != nil {
+		return "", fmt.Errorf("parse welcome: %w", err)
+	}
+	if w.Version != ProtoVersion {
+		return "", fmt.Errorf("%w: server v%d, client v%d",
+			ErrProtocolVersion, w.Version, ProtoVersion)
+	}
+	return w.SessionID, nil
+}
+
+func parseReject(raw []byte) (string, error) {
+	var r Reject
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return "", fmt.Errorf("parse reject: %w", err)
+	}
+	return "", fmt.Errorf("%w: %s", ErrRejected, r.Reason)
 }
 
 // Server performs the server side of the handshake. It reads CLIENT_HELLO,

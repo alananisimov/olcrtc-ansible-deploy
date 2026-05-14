@@ -265,7 +265,7 @@ func openControlStreamTimeout(
 	_ = stream.SetDeadline(time.Time{})
 	if err != nil {
 		_ = stream.Close()
-		return nil, "", err
+		return nil, "", fmt.Errorf("handshake client: %w", err)
 	}
 	return stream, sid, nil
 }
@@ -284,6 +284,7 @@ func resolveDeviceID(deviceID, path string) (string, error) {
 	if path == "" {
 		return uuid.NewString(), nil
 	}
+	// #nosec G304 -- persistent device ID path is explicit user configuration.
 	data, err := os.ReadFile(path)
 	if err == nil {
 		id := strings.TrimSpace(string(data))
@@ -294,7 +295,7 @@ func resolveDeviceID(deviceID, path string) (string, error) {
 		return "", fmt.Errorf("read device id %s: %w", path, err)
 	}
 	id := uuid.NewString()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return "", fmt.Errorf("mkdir device id dir: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {

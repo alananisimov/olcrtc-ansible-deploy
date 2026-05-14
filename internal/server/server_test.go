@@ -16,6 +16,11 @@ import (
 	"github.com/xtaci/smux"
 )
 
+const (
+	testConnectAddr = "127.0.0.1"
+	testConnectCmd  = connectCommand
+)
+
 func TestSetupCipher(t *testing.T) {
 	keyHex := "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	cipher, err := setupCipher(keyHex)
@@ -48,7 +53,7 @@ func TestSmuxConfig(t *testing.T) {
 
 func TestParseConnectRequest(t *testing.T) {
 	buf, err := json.Marshal(ConnectRequest{
-		Cmd:  "connect",
+		Cmd:  testConnectCmd,
 		Addr: "example.com", //nolint:goconst // test literal, repetition is intentional
 		Port: 443,
 	})
@@ -249,7 +254,7 @@ func TestDialWithoutProxy(t *testing.T) {
 		t.Fatalf("listener addr type = %T, want *net.TCPAddr", ln.Addr())
 	}
 	s := &Server{resolver: net.DefaultResolver}
-	conn, err := s.dial(ConnectRequest{Addr: "127.0.0.1", Port: tcpAddr.Port})
+	conn, err := s.dial(ConnectRequest{Addr: testConnectAddr, Port: tcpAddr.Port})
 	if err != nil {
 		t.Fatalf("dial() error = %v", err)
 	}
@@ -258,7 +263,7 @@ func TestDialWithoutProxy(t *testing.T) {
 }
 
 func TestDialProxyError(t *testing.T) {
-	s := &Server{socksProxyAddr: "127.0.0.1", socksProxyPort: 1}
+	s := &Server{socksProxyAddr: testConnectAddr, socksProxyPort: 1}
 	if _, err := s.dial(ConnectRequest{Addr: "example.com", Port: 443}); err == nil || !strings.Contains(err.Error(), "failed to dial proxy") { //nolint:lll // long test description
 		t.Fatalf("dial() error = %v", err)
 	}
@@ -333,8 +338,8 @@ func TestHandleStreamDispatchAfterConnect(t *testing.T) {
 		t.Fatalf("OpenStream() error = %v", err)
 	}
 	req, err := json.Marshal(ConnectRequest{
-		Cmd:  "connect",
-		Addr: "127.0.0.1",
+		Cmd:  testConnectCmd,
+		Addr: testConnectAddr,
 		Port: 1, // unreachable port — dispatch will fail dial and exit
 	})
 	if err != nil {
@@ -368,8 +373,10 @@ func TestReinstallSessionFiresOnClose(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // integration-style test needs setup, proxying, and traffic assertions together.
 func TestDispatchFiresOnTraffic(t *testing.T) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp4", testConnectAddr+":0")
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
 	}
@@ -403,9 +410,9 @@ func TestDispatchFiresOnTraffic(t *testing.T) {
 	defer func() { _ = clientSess.Close() }()
 
 	var rec struct {
-		sid      string
-		addr     string
-		in, out  uint64
+		sid     string
+		addr    string
+		in, out uint64
 	}
 	recChan := make(chan struct{})
 	s := &Server{
@@ -437,8 +444,8 @@ func TestDispatchFiresOnTraffic(t *testing.T) {
 		t.Fatalf("addr type = %T", ln.Addr())
 	}
 	req, err := json.Marshal(ConnectRequest{
-		Cmd:  "connect",
-		Addr: "127.0.0.1",
+		Cmd:  testConnectCmd,
+		Addr: testConnectAddr,
 		Port: tcpAddr.Port,
 	})
 	if err != nil {

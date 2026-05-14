@@ -385,10 +385,8 @@ func (s *Server) onData(data []byte) {
 // streams are tunnel streams and proxy traffic.
 func (s *Server) serve(ctx context.Context) {
 	for {
-		select {
-		case <-ctx.Done():
+		if contextDone(ctx) {
 			return
-		default:
 		}
 
 		s.sessMu.RLock()
@@ -411,10 +409,8 @@ func (s *Server) serve(ctx context.Context) {
 
 		stream, err := sess.AcceptStream()
 		if err != nil {
-			select {
-			case <-ctx.Done():
+			if contextDone(ctx) {
 				return
-			default:
 			}
 			logger.Debugf("AcceptStream returned %v - reinstalling session", err)
 			s.reinstallSession(sess)
@@ -426,6 +422,15 @@ func (s *Server) serve(ctx context.Context) {
 			defer s.wg.Done()
 			s.handleStream(ctx, stream)
 		}()
+	}
+}
+
+func contextDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
 	}
 }
 
@@ -568,7 +573,7 @@ func (s *Server) dispatch(stream *smux.Stream, req ConnectRequest) {
 	go func() {
 		n, _ := io.Copy(stream, conn)
 		if n > 0 {
-			bytesOut = uint64(n) //nolint:gosec // io.Copy returns non-negative int64
+			bytesOut = uint64(n)
 		}
 		_ = stream.Close()
 		close(done)
@@ -578,7 +583,7 @@ func (s *Server) dispatch(stream *smux.Stream, req ConnectRequest) {
 	<-done
 	bytesIn := uint64(0)
 	if in > 0 {
-		bytesIn = uint64(in) //nolint:gosec // io.Copy returns non-negative int64
+		bytesIn = uint64(in)
 	}
 	if s.onTraffic != nil {
 		s.onTraffic(sid, addr, bytesIn, bytesOut)

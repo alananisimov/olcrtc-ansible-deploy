@@ -8,6 +8,13 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 )
 
+const (
+	testModeSrv      = "srv"
+	testAuthProvider = "wbstream"
+	testRoomID       = "r1"
+	testCryptoKey    = "deadbeef"
+)
+
 func TestLoadAndApply(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "olcrtc.yaml")
@@ -43,18 +50,48 @@ debug: true
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if f.Mode != "srv" || f.Auth.Provider != "wbstream" || f.Room.ID != "r1" || f.Crypto.Key != "deadbeef" {
-		t.Fatalf("unexpected file: %+v", f)
-	}
+	requireLoadedFile(t, f)
 
 	got := Apply(session.Config{}, f)
-	if got.Mode != "srv" || got.Link != "direct" || got.Auth != "wbstream" ||
-		got.RoomID != "r1" || got.KeyHex != "deadbeef" ||
-		got.Transport != "datachannel" || got.DNSServer != "1.1.1.1:53" ||
-		got.SOCKSHost != "127.0.0.1" || got.SOCKSPort != 1080 ||
-		got.SOCKSUser != "u" || got.SOCKSPass != "p" ||
-		got.VP8FPS != 25 || got.VP8BatchSize != 4 || got.Amount != 3 {
-		t.Fatalf("Apply produced wrong config: %+v", got)
+	requireAppliedConfig(t, got)
+}
+
+func requireLoadedFile(t *testing.T, f File) {
+	t.Helper()
+	if f.Mode != testModeSrv {
+		t.Fatalf("Mode = %q, want %q", f.Mode, testModeSrv)
+	}
+	if f.Auth.Provider != testAuthProvider {
+		t.Fatalf("Auth.Provider = %q, want %q", f.Auth.Provider, testAuthProvider)
+	}
+	if f.Room.ID != testRoomID {
+		t.Fatalf("Room.ID = %q, want %q", f.Room.ID, testRoomID)
+	}
+	if f.Crypto.Key != testCryptoKey {
+		t.Fatalf("Crypto.Key = %q, want %q", f.Crypto.Key, testCryptoKey)
+	}
+}
+
+func requireAppliedConfig(t *testing.T, got session.Config) {
+	t.Helper()
+	want := session.Config{
+		Mode:         testModeSrv,
+		Link:         "direct",
+		Auth:         testAuthProvider,
+		RoomID:       testRoomID,
+		KeyHex:       testCryptoKey,
+		Transport:    "datachannel",
+		DNSServer:    "1.1.1.1:53",
+		SOCKSHost:    "127.0.0.1",
+		SOCKSPort:    1080,
+		SOCKSUser:    "u",
+		SOCKSPass:    "p",
+		VP8FPS:       25,
+		VP8BatchSize: 4,
+		Amount:       3,
+	}
+	if got != want {
+		t.Fatalf("Apply produced wrong config: %+v, want %+v", got, want)
 	}
 }
 
@@ -65,7 +102,7 @@ func TestApplyCLIWins(t *testing.T) {
 		SOCKSPort: 9999,
 	}
 	f := File{
-		Mode:   "srv",
+		Mode:   testModeSrv,
 		Crypto: Crypto{Key: "from-yaml"},
 		SOCKS:  SOCKS{Port: 1234, Host: "0.0.0.0"},
 	}

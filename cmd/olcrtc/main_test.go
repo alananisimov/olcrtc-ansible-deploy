@@ -13,6 +13,11 @@ import (
 
 var errBoom = errors.New("boom")
 
+const (
+	testAuthWBStream = "wbstream"
+	testDNSServer    = "1.1.1.1:53"
+)
+
 func writeYAML(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -39,12 +44,12 @@ func TestRunWithArgsRequiresConfig(t *testing.T) {
 func TestRunGenModeValidationErrors(t *testing.T) {
 	session.RegisterDefaults()
 
-	if err := runWithConfig(loadedConfig{scfg: session.Config{Mode: "gen"}}); err == nil {
+	if err := runWithConfig(loadedConfig{scfg: session.Config{Mode: modeGen}}); err == nil {
 		t.Fatal("runWithConfig(gen, no carrier) error = nil")
 	}
 
 	cfg := loadedConfig{scfg: session.Config{
-		Mode: "gen", Auth: "wbstream", DNSServer: "1.1.1.1:53",
+		Mode: modeGen, Auth: testAuthWBStream, DNSServer: testDNSServer,
 	}}
 	if err := runWithConfig(cfg); err == nil {
 		t.Fatal("runWithConfig(gen, amount=0) error = nil")
@@ -58,7 +63,7 @@ func TestRunGenModeCallsGen(t *testing.T) {
 	oldRunGen := runGen
 	t.Cleanup(func() { runGen = oldRunGen })
 	runGen = func(scfg session.Config) error {
-		if scfg.Auth != "wbstream" || scfg.DNSServer != "1.1.1.1:53" || scfg.Amount != 3 {
+		if scfg.Auth != testAuthWBStream || scfg.DNSServer != testDNSServer || scfg.Amount != 3 {
 			t.Fatalf("runGen scfg = %+v", scfg)
 		}
 		collected = append(collected, "ok")
@@ -66,7 +71,7 @@ func TestRunGenModeCallsGen(t *testing.T) {
 	}
 
 	cfg := loadedConfig{scfg: session.Config{
-		Mode: "gen", Auth: "wbstream", DNSServer: "1.1.1.1:53", Amount: 3,
+		Mode: modeGen, Auth: testAuthWBStream, DNSServer: testDNSServer, Amount: 3,
 	}}
 	if err := runWithConfig(cfg); err != nil {
 		t.Fatalf("runWithConfig(gen) error = %v", err)

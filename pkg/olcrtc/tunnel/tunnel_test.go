@@ -8,6 +8,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/pkg/olcrtc/tunnel"
 )
 
+var errNo = errors.New("no")
+
 func TestRun_FailsWithoutKey(t *testing.T) {
 	tunnel.RegisterDefaults()
 	err := tunnel.New(tunnel.Config{
@@ -22,15 +24,14 @@ func TestRun_FailsWithoutKey(t *testing.T) {
 	}
 }
 
-func TestRun_PropagatesAuthHook(t *testing.T) {
+func TestRun_PropagatesAuthHook(_ *testing.T) {
 	tunnel.RegisterDefaults()
 
-	sentinel := errors.New("no")
 	var called bool
 	cfg := tunnel.Config{
 		AuthHook: func(string, map[string]any) (string, error) {
 			called = true
-			return "", sentinel
+			return "", errNo
 		},
 	}
 	_ = tunnel.New(cfg).Run(context.Background())

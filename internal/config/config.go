@@ -5,6 +5,8 @@
 // [Apply] to merge a parsed [File] onto an existing [session.Config];
 // non-zero fields in the session config (typically populated from CLI flags)
 // take precedence over the YAML values.
+//
+//nolint:tagliatelle // YAML keys are the documented config file schema.
 package config
 
 import (
@@ -21,21 +23,21 @@ var ErrConfigNotFound = errors.New("config file not found")
 
 // File is the on-disk YAML schema.
 type File struct {
-	Mode     string  `yaml:"mode"`
-	Link     string  `yaml:"link"`
-	Auth     Auth    `yaml:"auth"`
-	Room     Room    `yaml:"room"`
-	Crypto   Crypto  `yaml:"crypto"`
-	Net      Net     `yaml:"net"`
-	SOCKS    SOCKS   `yaml:"socks"`
-	Engine   Engine  `yaml:"engine"`
-	Video    Video   `yaml:"video"`
-	VP8      VP8     `yaml:"vp8"`
-	SEI      SEI     `yaml:"sei"`
-	Gen      Gen     `yaml:"gen"`
-	Data     string  `yaml:"data"`
-	Debug    bool    `yaml:"debug"`
-	FFmpeg   string  `yaml:"ffmpeg"`
+	Mode   string `yaml:"mode"`
+	Link   string `yaml:"link"`
+	Auth   Auth   `yaml:"auth"`
+	Room   Room   `yaml:"room"`
+	Crypto Crypto `yaml:"crypto"`
+	Net    Net    `yaml:"net"`
+	SOCKS  SOCKS  `yaml:"socks"`
+	Engine Engine `yaml:"engine"`
+	Video  Video  `yaml:"video"`
+	VP8    VP8    `yaml:"vp8"`
+	SEI    SEI    `yaml:"sei"`
+	Gen    Gen    `yaml:"gen"`
+	Data   string `yaml:"data"`
+	Debug  bool   `yaml:"debug"`
+	FFmpeg string `yaml:"ffmpeg"`
 }
 
 // Auth selects the auth provider.
@@ -111,6 +113,7 @@ type Gen struct {
 
 // Load parses a YAML file from disk.
 func Load(path string) (File, error) {
+	// #nosec G304 -- config path is an explicit CLI/user input.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
