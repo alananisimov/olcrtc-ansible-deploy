@@ -16,6 +16,7 @@ logging.getLogger("livekit").setLevel(logging.WARNING)
 
 API_BASE = "https://stream.wb.ru"
 WS_URL = "wss://rtc-el-01.wb.ru"
+HARDCODED_ROOM_ID = "019e23c2-a580-7550-b08a-7ac5342ca21f"
 TEST_MESSAGES = ["Hello WB Stream!", "Hello world", "X" * 100, "Final test"]
 
 def _get_room_token(room_id: str, display_name: str) -> tuple[str, str]:
@@ -48,11 +49,11 @@ async def run_poc() -> dict:
     results = {"server_ok": False, "client_ok": False, "sent": 0, "recv": 0, "errors": []}
     
     server, client = rtc.Room(), rtc.Room()
-    shared_room_id, _ = _get_room_token("", "OlcRTC-Server")
+    shared_room_id = HARDCODED_ROOM_ID
 
     print("[1/3] Connecting Server & Client...")
     try:
-        shared_room_id, server_tok = _get_room_token("", "OlcRTC-Server")
+        shared_room_id, server_tok = _get_room_token(shared_room_id, "OlcRTC-Server")
         _, client_tok = _get_room_token(shared_room_id, "OlcRTC-Client")
 
         @server.on("data_received")
