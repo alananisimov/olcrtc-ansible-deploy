@@ -3,8 +3,11 @@ package salutejazz
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -108,5 +111,61 @@ func TestSessionCanSendVideoOnlyModes(t *testing.T) {
 	s.closed.Store(true)
 	if s.CanSend() {
 		t.Fatal("CanSend() = true for closed session")
+	}
+}
+
+func TestSendPublisherTrackAddWritesJazzPayload(t *testing.T) {
+	msgCh := make(chan map[string]any, 1)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket: %v", err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		var msg map[string]any
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Errorf("read json: %v", err)
+			return
+		}
+		msgCh <- msg
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + server.URL[len("http"):]
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	s := &Session{
+		roomID:  "room-1",
+		groupID: "group-1",
+		ws:      conn,
+	}
+	if err := s.sendPublisherTrackAdd("VIDEO", "CAMERA", false); err != nil {
+		t.Fatalf("sendPublisherTrackAdd() error = %v", err)
+	}
+
+	msg := <-msgCh
+	if msg[keyRoomID] != "room-1" || msg[keyEvent] != "media-in" || msg["groupId"] != "group-1" {
+		t.Fatalf("unexpected envelope: %+v", msg)
+	}
+	payload, ok := msg[keyPayload].(map[string]any)
+	if !ok {
+		t.Fatalf("payload missing or wrong type: %+v", msg[keyPayload])
+	}
+	if payload["method"] != "rtc:track:add" {
+		t.Fatalf("method = %v, want rtc:track:add", payload["method"])
+	}
+	track, ok := payload["track"].(map[string]any)
+	if !ok {
+		t.Fatalf("track missing or wrong type: %+v", payload["track"])
+	}
+	if track["type"] != "VIDEO" || track["source"] != "CAMERA" || track["muted"] != false {
+		t.Fatalf("track = %+v, want video camera unmuted", track)
 	}
 }
