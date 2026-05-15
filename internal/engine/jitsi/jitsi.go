@@ -401,15 +401,28 @@ func decodeRaw(m j.BridgeMessage) []byte {
 }
 
 // Close terminates the session and releases resources.
+//
+// Shutdown is performed in the order a Jitsi web client uses:
+//
+//  1. Mark the session closed so send/recv loops drop new work.
+//  2. If a pion PeerConnection was negotiated, send Jingle
+//     session-terminate to Jicofo so the conference state is updated and
+//     the JVB bridge slot is freed promptly. Without this, Jicofo only
+//     notices the participant is gone after the MUC presence-unavailable
+//     stanza, and JVB only reclaims resources after a longer idle timeout.
+//  3. Close the pion PeerConnection (stops media, sends DTLS bye).
+//  4. Close the underlying j.Session, which closes the colibri-ws bridge,
+//     sends MUC presence-unavailable, and tears down the XMPP transport.
+//  5. Cancel the supervisor context and wait for goroutines.
 func (s *Session) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
 
-	if s.cancel != nil {
-		s.cancel()
+	jSess := s.jSess.Load()
+	if jSess != nil {
+		s.terminateJingleSession(jSess)
 	}
-	s.doneOnce.Do(func() { close(s.done) })
 
 	s.pcMu.Lock()
 	pc := s.pc
@@ -419,12 +432,16 @@ func (s *Session) Close() error {
 		_ = pc.Close()
 	}
 
-	jSess := s.jSess.Swap(nil)
 	if jSess != nil {
 		_ = jSess.Close()
 	}
-
+	s.jSess.Store(nil)
 	s.bridgeReady.Store(false)
+
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.doneOnce.Do(func() { close(s.done) })
 
 	stopped := make(chan struct{})
 	go func() {
@@ -436,6 +453,22 @@ func (s *Session) Close() error {
 	case <-time.After(2 * time.Second):
 	}
 	return nil
+}
+
+// terminateJingleSession sends a Jingle session-terminate stanza to Jicofo
+// so the conference state is updated immediately. Sent even when no pion
+// PeerConnection was negotiated: Jicofo allocates the JVB bridge slot the
+// moment it dispatches session-initiate, regardless of whether the
+// participant ever sent session-accept, and an explicit session-terminate
+// frees that slot promptly.
+func (s *Session) terminateJingleSession(jSess *j.Session) {
+	neg := jSess.Negotiator()
+	if neg == nil {
+		return
+	}
+	if err := neg.Terminate("success"); err != nil {
+		logger.Debugf("jitsi: session-terminate: %v", err)
+	}
 }
 
 // SetReconnectCallback registers a callback for reconnection events.
