@@ -33,7 +33,7 @@ olcrtc://<Auth>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>$<MIMO>
 
 | Поле | Значение |
 |------|----------|
-| `<Auth>` | Имя auth-провайдера, например `telemost`, `jazz`, `wbstream` |
+| `<Auth>` | Имя auth-провайдера, например `telemost`, `jazz`, `wbstream`, `jitsi` |
 | `<Transport>` | Имя транспорта, например `datachannel`, `vp8channel`, `seichannel`, `videochannel` |
 | payload | Параметры транспорта в `<key=value&...>`. Ключи совпадают с YAML полями. Блок опускается если используются defaults |
 | `<RoomID>` | Идентификатор комнаты или auth-specific room URL/ID |
@@ -215,6 +215,32 @@ video:
   bitrate: "5000k"
   hw: none
   codec: qrcode
+data: data
+```
+
+---
+
+### jitsi + datachannel
+
+```text
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799$RU / olc free sub
+```
+
+`<RoomID>` для jitsi — полный URL комнаты в формате `https://host/room` (или `host/room`). Поддерживается любой self-hosted Jitsi Meet инстанс без аутентификации; для публичных серверов вроде `meet.jit.si` тот же формат.
+
+### Эквивалент YAML
+
+```yaml
+mode: cnc
+link: direct
+auth:
+  provider: jitsi
+room:
+  id: "https://meet.cryptopro.ru/myroom"
+crypto:
+  key: "d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799"
+net:
+  transport: datachannel
 data: data
 ```
 

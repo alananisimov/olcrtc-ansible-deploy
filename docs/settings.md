@@ -12,12 +12,12 @@
 
 ## Матрица совместимости
 
-| Transport | telemost | jazz | wbstream |
-|-----------|:--------:|:----:|:--------:|
-| datachannel | - | ~ | ~ |
-| vp8channel | + | - | + |
-| seichannel | - | - | + |
-| videochannel | + | - | + |
+| Transport | telemost | jazz | wbstream | jitsi |
+|-----------|:--------:|:----:|:--------:|:-----:|
+| datachannel | - | ~ | ~ | + |
+| vp8channel | + | - | + | ~ |
+| seichannel | - | - | + | ~ |
+| videochannel | + | - | + | ~ |
 
 **Легенда:**
 - `+` - работает (pass в E2E тестах)
@@ -30,7 +30,9 @@
 
 **WBStream:** все транспорты кроме datachannel работают. DataChannel в обычном guest flow без выдавания модератора не работает — WB Stream выдаёт токены с `canPublishData=false`, и DC не маршрутизирует данные.
 
-**Рекомендуемая комбинация: `wbstream + vp8channel`** — работает стабильно, не требует специальных прав.
+**Jitsi:** datachannel стабильно проходит — реализован поверх colibri-ws bridge channel и шлёт байты через `EndpointMessage{raw}` broadcast. Подходит для self-hosted и публичных Jitsi Meet инстансов без аутентификации (`https://meet.cryptopro.ru/...`, `https://meet.jit.si/...` и т.п.). Видео-транспорты (vp8channel, seichannel, videochannel) экспонируют sendable VideoTrack через pion PeerConnection после Jingle session-accept, но Jicofo требует дополнительных протокольных шагов (LastN, ReceiverVideoConstraints, source-add) для маршрутизации видео — поэтому они помечены `~` (best effort).
+
+**Рекомендуемая комбинация: `wbstream + vp8channel`** — работает стабильно, не требует специальных прав. **`jitsi + datachannel`** — рекомендация для self-hosted Jitsi инстансов.
 
 Скорость по убыванию: `datachannel` > `vp8channel` > `seichannel` > `videochannel`
 
@@ -41,7 +43,7 @@
 | YAML поле | Что вводить |
 |-----------|-------------|
 | `mode` | `srv` на сервере, `cnc` на клиенте, `gen` для генерации Room ID |
-| `auth.provider` | `telemost`, `jazz` или `wbstream` |
+| `auth.provider` | `telemost`, `jazz`, `wbstream` или `jitsi` |
 | `net.transport` | `datachannel`, `vp8channel`, `seichannel` или `videochannel` |
 | `room.id` | Room ID |
 | `crypto.key` | Ключ шифрования hex 64 символа. Генерация: `openssl rand -hex 32` |
