@@ -27,6 +27,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/engine"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
+	pioninterceptor "github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 	"github.com/zarazaex69/j"
 )
@@ -238,7 +239,20 @@ func (s *Session) videoTrackHandler() func(*webrtc.TrackRemote, *webrtc.RTPRecei
 func (s *Session) negotiatePC(ctx context.Context, jSess *j.Session) error {
 	settings := webrtc.SettingEngine{}
 	settings.LoggerFactory = logger.NewPionLoggerFactory()
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
+
+	// pion auto-registers a default interceptor chain (sender reports,
+	// receiver reports, NACK, etc.) when none is supplied. Several of
+	// those probe the DTLS transport on a tick — until DTLS comes up
+	// (which can take seconds against Jitsi's STUN-only path, or never
+	// in pathological cases) they spam logs with
+	// "the DTLS transport has not started yet". JVB performs its own
+	// RTCP feedback aggregation, so the conference PC does not need
+	// any of those interceptors. An empty registry silences the noise.
+	registry := &pioninterceptor.Registry{}
+	api := webrtc.NewAPI(
+		webrtc.WithSettingEngine(settings),
+		webrtc.WithInterceptorRegistry(registry),
+	)
 
 	// Jicofo emits Plan B style SDP with separate <content> sections per
 	// media kind and SSRC-keyed source descriptors. pion's default

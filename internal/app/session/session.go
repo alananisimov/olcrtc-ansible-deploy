@@ -153,7 +153,13 @@ func RegisterDefaults() {
 
 // ApplyAuthDefaults fills in Engine and URL from the auth provider when they are not set explicitly.
 // For -auth none the fields are left untouched (the caller supplies them directly).
-// Returns an error if the auth provider has no default URL and -url was not given.
+//
+// An empty cfg.URL is acceptable when the auth provider does not advertise a
+// DefaultServiceURL — those providers (e.g. jitsi) extract the SFU host from
+// the user-supplied RoomURL inside Issue(), so an externally fixed
+// service URL would be meaningless. Providers that DO advertise a
+// DefaultServiceURL (telemost, wbstream, jazz) still require URL to be set
+// when their default cannot be applied.
 func ApplyAuthDefaults(cfg Config) (Config, error) {
 	if cfg.Auth == authNone || cfg.Auth == "" {
 		return cfg, nil
@@ -168,7 +174,7 @@ func ApplyAuthDefaults(cfg Config) (Config, error) {
 	if cfg.URL == "" {
 		cfg.URL = p.DefaultServiceURL()
 	}
-	if cfg.URL == "" {
+	if cfg.URL == "" && p.DefaultServiceURL() != "" {
 		return cfg, fmt.Errorf("%w: auth provider %q has no default URL", ErrURLRequired, cfg.Auth)
 	}
 	return cfg, nil
