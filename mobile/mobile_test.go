@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/client"
+	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
@@ -83,12 +84,15 @@ func TestDefaultsAndSetters(t *testing.T) {
 	SetLink("direct")
 	SetDNS("9.9.9.9:53")
 	SetVP8Options(-1, 999)
+	SetLivenessOptions(2500, 750, -1)
 
 	mu.Lock()
 	got := defaults
 	mu.Unlock()
 	if got.transport != dataTransport || got.link != defaultLink || got.dnsServer != "9.9.9.9:53" ||
-		got.vp8FPS != 1 || got.vp8BatchSize != 64 {
+		got.vp8FPS != 1 || got.vp8BatchSize != 64 ||
+		got.livenessInterval != 2500*time.Millisecond || got.livenessTimeout != 750*time.Millisecond ||
+		got.livenessFailures != control.DefaultFailures {
 		t.Fatalf("defaults = %+v", got)
 	}
 
@@ -168,15 +172,19 @@ func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 	t.Cleanup(func() {
 		resetMobileGlobals(t)
 	})
+	SetLivenessOptions(2500, 750, 4)
 
 	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
 		if cfg.Link != defaultLink || cfg.Transport != dataTransport || cfg.Carrier != carrierJazz ||
 			cfg.RoomURL != "any" || cfg.DeviceID != "client" || cfg.LocalAddr != "127.0.0.1:1080" ||
-			cfg.DNSServer != defaultDNSServer || cfg.VP8FPS != 60 || cfg.VP8BatchSize != 8 {
+			cfg.DNSServer != defaultDNSServer || cfg.VP8FPS != 60 || cfg.VP8BatchSize != 8 ||
+			cfg.Liveness.Interval != 2500*time.Millisecond ||
+			cfg.Liveness.Timeout != 750*time.Millisecond ||
+			cfg.Liveness.Failures != 4 {
 			t.Fatalf(
-				"RunWithReady args mismatch: link=%q transport=%q carrier=%q room=%q client=%q local=%q dns=%q vp8=%d/%d",
+				"RunWithReady args mismatch: link=%q transport=%q carrier=%q room=%q client=%q local=%q dns=%q vp8=%d/%d liveness=%+v",
 				cfg.Link, cfg.Transport, cfg.Carrier, cfg.RoomURL, cfg.DeviceID,
-				cfg.LocalAddr, cfg.DNSServer, cfg.VP8FPS, cfg.VP8BatchSize,
+				cfg.LocalAddr, cfg.DNSServer, cfg.VP8FPS, cfg.VP8BatchSize, cfg.Liveness,
 			)
 		}
 		onReady()
@@ -208,9 +216,12 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 
 	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
 		if cfg.Transport != defaultTransport || cfg.RoomURL != "https://telemost.yandex.ru/j/room" ||
-			cfg.LocalAddr != "127.0.0.1:1081" || cfg.SOCKSUser != "u" || cfg.SOCKSPass != "p" {
-			t.Fatalf("Start args mismatch: transport=%q room=%q local=%q user/pass=%q/%q",
-				cfg.Transport, cfg.RoomURL, cfg.LocalAddr, cfg.SOCKSUser, cfg.SOCKSPass)
+			cfg.LocalAddr != "127.0.0.1:1081" || cfg.SOCKSUser != "u" || cfg.SOCKSPass != "p" ||
+			cfg.Liveness.Interval != control.DefaultInterval ||
+			cfg.Liveness.Timeout != control.DefaultTimeout ||
+			cfg.Liveness.Failures != control.DefaultFailures {
+			t.Fatalf("Start args mismatch: transport=%q room=%q local=%q user/pass=%q/%q liveness=%+v",
+				cfg.Transport, cfg.RoomURL, cfg.LocalAddr, cfg.SOCKSUser, cfg.SOCKSPass, cfg.Liveness)
 		}
 		onReady()
 		<-ctx.Done()
@@ -225,9 +236,14 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 	}
 	Stop()
 
+	SetLivenessOptions(3000, 1000, 5)
 	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
-		if cfg.Transport != dataTransport || cfg.VP8FPS != 1 || cfg.VP8BatchSize != 64 {
-			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d", cfg.Transport, cfg.VP8FPS, cfg.VP8BatchSize)
+		if cfg.Transport != dataTransport || cfg.VP8FPS != 1 || cfg.VP8BatchSize != 64 ||
+			cfg.Liveness.Interval != 3000*time.Millisecond ||
+			cfg.Liveness.Timeout != time.Second ||
+			cfg.Liveness.Failures != 5 {
+			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d liveness=%+v",
+				cfg.Transport, cfg.VP8FPS, cfg.VP8BatchSize, cfg.Liveness)
 		}
 		onReady()
 		<-ctx.Done()
@@ -239,6 +255,32 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 	}
 	if elapsed < 0 {
 		t.Fatalf("Check() elapsed = %d", elapsed)
+	}
+}
+
+func TestPingPassesLiveness(t *testing.T) {
+	resetMobileGlobals(t)
+	t.Cleanup(func() {
+		resetMobileGlobals(t)
+	})
+	SetLivenessOptions(4000, 1500, 6)
+
+	seen := make(chan control.Config, 1)
+	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
+		seen <- cfg.Liveness
+		onReady()
+		<-ctx.Done()
+		return nil
+	}
+
+	_, _ = Ping("jazz", "dc", "", "client", "key", 1085, 100, "http://127.0.0.1/", 30, 1)
+	select {
+	case got := <-seen:
+		if got.Interval != 4000*time.Millisecond || got.Timeout != 1500*time.Millisecond || got.Failures != 6 {
+			t.Fatalf("Ping liveness = %+v", got)
+		}
+	default:
+		t.Fatal("Ping did not start client")
 	}
 }
 

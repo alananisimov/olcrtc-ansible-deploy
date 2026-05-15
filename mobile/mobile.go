@@ -15,6 +15,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
+	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 
@@ -65,23 +66,26 @@ const (
 )
 
 var (
-	mu                 sync.Mutex //nolint:gochecknoglobals // package-level state intentional
-	defaults           mobileConfig //nolint:gochecknoglobals // package-level state intentional
-	defaultsSet        sync.Once //nolint:gochecknoglobals // package-level state intentional
-	registerSet        sync.Once //nolint:gochecknoglobals // package-level state intentional
+	mu                 sync.Mutex            //nolint:gochecknoglobals // package-level state intentional
+	defaults           mobileConfig          //nolint:gochecknoglobals // package-level state intentional
+	defaultsSet        sync.Once             //nolint:gochecknoglobals // package-level state intentional
+	registerSet        sync.Once             //nolint:gochecknoglobals // package-level state intentional
 	runClientWithReady = client.RunWithReady //nolint:gochecknoglobals // package-level state intentional
-	cancel             context.CancelFunc //nolint:gochecknoglobals // package-level state intentional
-	done               chan struct{} //nolint:gochecknoglobals // package-level state intentional
-	ready              chan struct{} //nolint:gochecknoglobals // package-level state intentional
+	cancel             context.CancelFunc    //nolint:gochecknoglobals // package-level state intentional
+	done               chan struct{}         //nolint:gochecknoglobals // package-level state intentional
+	ready              chan struct{}         //nolint:gochecknoglobals // package-level state intentional
 	errRun             error
 )
 
 type mobileConfig struct {
-	link         string
-	transport    string
-	dnsServer    string
-	vp8FPS       int
-	vp8BatchSize int
+	link             string
+	transport        string
+	dnsServer        string
+	vp8FPS           int
+	vp8BatchSize     int
+	livenessInterval time.Duration
+	livenessTimeout  time.Duration
+	livenessFailures int
 }
 
 // SetProtector sets the Android VPN socket protector.
@@ -143,6 +147,21 @@ func SetVP8Options(fps, batchSize int) {
 	defaults.vp8BatchSize = clampAtLeastOne(batchSize, 64)
 }
 
+// SetLivenessOptions configures control-stream ping/pong checks.
+// Values <= 0 reset that field to its default. Durations are milliseconds.
+func SetLivenessOptions(intervalMillis, timeoutMillis, failures int) {
+	mu.Lock()
+	defer mu.Unlock()
+	ensureDefaultConfigLocked()
+	defaults.livenessInterval = durationFromMillisOrDefault(intervalMillis, control.DefaultInterval)
+	defaults.livenessTimeout = durationFromMillisOrDefault(timeoutMillis, control.DefaultTimeout)
+	if failures <= 0 {
+		defaults.livenessFailures = control.DefaultFailures
+		return
+	}
+	defaults.livenessFailures = failures
+}
+
 // SetDebug enables or disables verbose logging.
 func SetDebug(enabled bool) {
 	logger.SetVerbose(enabled)
@@ -195,6 +214,11 @@ func Check(
 	vp8BatchSize int,
 ) (int64, error) {
 	registerDefaults()
+	mu.Lock()
+	ensureDefaultConfigLocked()
+	cfg := defaults
+	mu.Unlock()
+
 	carrierName = normalizeCarrier(carrierName)
 	transportName = normalizeTransport(transportName)
 	if err := validateStartArgs(carrierName, roomID, clientID, keyHex); err != nil {
@@ -227,6 +251,7 @@ func Check(
 				DNSServer:    defaultDNSServer,
 				VP8FPS:       clampAtLeastOne(vp8FPS, 120),
 				VP8BatchSize: clampAtLeastOne(vp8BatchSize, 64),
+				Liveness:     livenessConfig(cfg),
 			},
 			func() {
 				readyOnce.Do(func() {
@@ -271,6 +296,11 @@ func Ping(
 	vp8BatchSize int,
 ) (int64, error) {
 	registerDefaults()
+	mu.Lock()
+	ensureDefaultConfigLocked()
+	cfg := defaults
+	mu.Unlock()
+
 	carrierName = normalizeCarrier(carrierName)
 	transportName = normalizeTransport(transportName)
 
@@ -310,6 +340,7 @@ func Ping(
 				DNSServer:    defaultDNSServer,
 				VP8FPS:       clampAtLeastOne(vp8FPS, 120),
 				VP8BatchSize: clampAtLeastOne(vp8BatchSize, 64),
+				Liveness:     livenessConfig(cfg),
 			},
 			func() {
 				readyOnce.Do(func() {
@@ -557,6 +588,7 @@ func startWithConfig(
 				SOCKSPass:    socksPass,
 				VP8FPS:       cfg.vp8FPS,
 				VP8BatchSize: cfg.vp8BatchSize,
+				Liveness:     livenessConfig(cfg),
 			},
 			func() {
 				readyOnce.Do(func() {
@@ -576,6 +608,7 @@ func startWithConfig(
 }
 
 // WaitReady blocks until the selected transport is connected and the local SOCKS5 listener is ready.
+//
 //nolint:cyclop // straightforward state-machine waits with multiple terminal conditions
 func WaitReady(timeoutMillis int) error {
 	mu.Lock()
@@ -666,13 +699,36 @@ func waitForCheckDone(doneCh <-chan error) {
 func ensureDefaultConfigLocked() {
 	defaultsSet.Do(func() {
 		defaults = mobileConfig{
-			link:         defaultLink,
-			transport:    defaultTransport,
-			dnsServer:    defaultDNSServer,
-			vp8FPS:       60,
-			vp8BatchSize: 8,
+			link:             defaultLink,
+			transport:        defaultTransport,
+			dnsServer:        defaultDNSServer,
+			vp8FPS:           60,
+			vp8BatchSize:     8,
+			livenessInterval: control.DefaultInterval,
+			livenessTimeout:  control.DefaultTimeout,
+			livenessFailures: control.DefaultFailures,
 		}
 	})
+}
+
+func livenessConfig(cfg mobileConfig) control.Config {
+	interval := cfg.livenessInterval
+	if interval <= 0 {
+		interval = control.DefaultInterval
+	}
+	timeout := cfg.livenessTimeout
+	if timeout <= 0 {
+		timeout = control.DefaultTimeout
+	}
+	failures := cfg.livenessFailures
+	if failures <= 0 {
+		failures = control.DefaultFailures
+	}
+	return control.Config{
+		Interval: interval,
+		Timeout:  timeout,
+		Failures: failures,
+	}
 }
 
 func normalizeTransport(value string) string {
@@ -732,6 +788,17 @@ func clampAtLeastOne(value, maxValue int) int {
 		return maxValue
 	}
 	return value
+}
+
+func durationFromMillisOrDefault(value int, def time.Duration) time.Duration {
+	if value <= 0 {
+		return def
+	}
+	d := time.Duration(value) * time.Millisecond
+	if d <= 0 {
+		return def
+	}
+	return d
 }
 
 // logBridge adapts LogWriter to io.Writer.
