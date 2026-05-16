@@ -70,6 +70,13 @@ func (p *streamTransport) Close() error {
 	return nil
 }
 
+// ResetPeer clears peer binding on engines that expose it.
+func (p *streamTransport) ResetPeer() {
+	if resetter, ok := p.session.(interface{ ResetPeer() }); ok {
+		resetter.ResetPeer()
+	}
+}
+
 // SetReconnectCallback registers reconnect handling.
 func (p *streamTransport) SetReconnectCallback(cb func()) {
 	p.session.SetReconnectCallback(func(*webrtc.DataChannel) {

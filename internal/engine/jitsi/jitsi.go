@@ -901,6 +901,14 @@ func (s *Session) Close() error {
 	return nil
 }
 
+// ResetPeer clears endpoint/epoch binding after an upper-layer handshake
+// failure so the next fresh peer in the room is not ignored because a stale
+// participant spoke first.
+func (s *Session) ResetPeer() {
+	s.peerEndpoint.Store(nil)
+	s.peerEpoch.Store(0)
+}
+
 // SetReconnectCallback registers a callback for reconnection events.
 func (s *Session) SetReconnectCallback(cb func(*webrtc.DataChannel)) { s.onReconnect = cb }
 

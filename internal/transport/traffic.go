@@ -79,6 +79,12 @@ func (t *trafficTransport) Close() error {
 	return nil
 }
 
+func (t *trafficTransport) ResetPeer() {
+	if resetter, ok := t.inner.(interface{ ResetPeer() }); ok {
+		resetter.ResetPeer()
+	}
+}
+
 func (t *trafficTransport) SetReconnectCallback(cb func()) { t.inner.SetReconnectCallback(cb) }
 
 func (t *trafficTransport) SetShouldReconnect(fn func() bool) { t.inner.SetShouldReconnect(fn) }

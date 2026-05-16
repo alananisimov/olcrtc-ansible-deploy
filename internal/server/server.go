@@ -437,6 +437,7 @@ func (s *Server) acceptHandshake(ctx context.Context, sess *smux.Session) bool {
 		default:
 		}
 		logger.Debugf("AcceptStream(control) returned %v - reinstalling session", err)
+		s.resetLinkPeer()
 		s.reinstallSession(sess)
 		return false
 	}
@@ -446,6 +447,7 @@ func (s *Server) acceptHandshake(ctx context.Context, sess *smux.Session) bool {
 	if err != nil {
 		logger.Warnf("handshake failed: %v", err)
 		_ = stream.Close()
+		s.resetLinkPeer()
 		s.reinstallSession(sess)
 		return false
 	}
@@ -458,6 +460,15 @@ func (s *Server) acceptHandshake(ctx context.Context, sess *smux.Session) bool {
 	logger.Infof("session %s opened (device=%s)", sid, hello.DeviceID)
 	s.startControlLoop(ctx, sess, stream)
 	return true
+}
+
+func (s *Server) resetLinkPeer() {
+	s.sessMu.RLock()
+	ln := s.ln
+	s.sessMu.RUnlock()
+	if resetter, ok := ln.(interface{ ResetPeer() }); ok {
+		resetter.ResetPeer()
+	}
 }
 
 func (s *Server) startControlLoop(ctx context.Context, sess *smux.Session, stream *smux.Stream) {
