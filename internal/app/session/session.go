@@ -144,6 +144,34 @@ var (
 	errNonNegativeDuration = errors.New("duration must be >= 0")
 )
 
+// VideoConfig holds tunables for the videochannel transport.
+type VideoConfig struct {
+	Width      int
+	Height     int
+	FPS        int
+	Bitrate    string
+	HW         string
+	QRSize     int
+	QRRecovery string
+	Codec      string
+	TileModule int
+	TileRS     int
+}
+
+// VP8Config holds tunables for the vp8channel transport.
+type VP8Config struct {
+	FPS       int
+	BatchSize int
+}
+
+// SEIConfig holds tunables for the seichannel transport.
+type SEIConfig struct {
+	FPS          int
+	BatchSize    int
+	FragmentSize int
+	AckTimeoutMS int
+}
+
 // Config holds runtime session settings.
 type Config struct {
 	Mode                  string
@@ -162,22 +190,9 @@ type Config struct {
 	DNSServer             string
 	SOCKSProxyAddr        string
 	SOCKSProxyPort        int
-	VideoWidth            int
-	VideoHeight           int
-	VideoFPS              int
-	VideoBitrate          string
-	VideoHW               string
-	VideoQRSize           int
-	VideoQRRecovery       string
-	VideoCodec            string
-	VideoTileModule       int
-	VideoTileRS           int
-	VP8FPS                int
-	VP8BatchSize          int
-	SEIFPS                int
-	SEIBatchSize          int
-	SEIFragmentSize       int
-	SEIAckTimeoutMS       int
+	Video                 VideoConfig
+	VP8                   VP8Config
+	SEI                   SEIConfig
 	LivenessInterval      string
 	LivenessTimeout       string
 	LivenessFailures      int
@@ -255,56 +270,56 @@ func ApplyLivenessDefaults(cfg Config) Config {
 }
 
 func applyVideoDefaults(cfg Config) Config {
-	if cfg.VideoCodec == "" {
-		cfg.VideoCodec = videoCodecQRCode
+	if cfg.Video.Codec == "" {
+		cfg.Video.Codec = videoCodecQRCode
 	}
 	width := defaultVideoWidth
-	if cfg.VideoCodec == videoCodecTile {
+	if cfg.Video.Codec == videoCodecTile {
 		width = defaultVideoHeight
 	}
-	if cfg.VideoWidth == 0 {
-		cfg.VideoWidth = width
+	if cfg.Video.Width == 0 {
+		cfg.Video.Width = width
 	}
-	if cfg.VideoHeight == 0 {
-		cfg.VideoHeight = defaultVideoHeight
+	if cfg.Video.Height == 0 {
+		cfg.Video.Height = defaultVideoHeight
 	}
-	if cfg.VideoFPS == 0 {
-		cfg.VideoFPS = defaultVideoFPS
+	if cfg.Video.FPS == 0 {
+		cfg.Video.FPS = defaultVideoFPS
 	}
-	if cfg.VideoBitrate == "" {
-		cfg.VideoBitrate = defaultVideoBitrate
+	if cfg.Video.Bitrate == "" {
+		cfg.Video.Bitrate = defaultVideoBitrate
 	}
-	if cfg.VideoHW == "" {
-		cfg.VideoHW = defaultVideoHW
+	if cfg.Video.HW == "" {
+		cfg.Video.HW = defaultVideoHW
 	}
-	if cfg.VideoQRRecovery == "" {
-		cfg.VideoQRRecovery = defaultVideoQRRecovery
+	if cfg.Video.QRRecovery == "" {
+		cfg.Video.QRRecovery = defaultVideoQRRecovery
 	}
 	return cfg
 }
 
 func applyVP8Defaults(cfg Config) Config {
-	if cfg.VP8FPS == 0 {
-		cfg.VP8FPS = defaultVP8FPS
+	if cfg.VP8.FPS == 0 {
+		cfg.VP8.FPS = defaultVP8FPS
 	}
-	if cfg.VP8BatchSize == 0 {
-		cfg.VP8BatchSize = defaultVP8BatchSize
+	if cfg.VP8.BatchSize == 0 {
+		cfg.VP8.BatchSize = defaultVP8BatchSize
 	}
 	return cfg
 }
 
 func applySEIDefaults(cfg Config) Config {
-	if cfg.SEIFPS == 0 {
-		cfg.SEIFPS = defaultSEIFPS
+	if cfg.SEI.FPS == 0 {
+		cfg.SEI.FPS = defaultSEIFPS
 	}
-	if cfg.SEIBatchSize == 0 {
-		cfg.SEIBatchSize = defaultSEIBatchSize
+	if cfg.SEI.BatchSize == 0 {
+		cfg.SEI.BatchSize = defaultSEIBatchSize
 	}
-	if cfg.SEIFragmentSize == 0 {
-		cfg.SEIFragmentSize = defaultSEIFragmentSize
+	if cfg.SEI.FragmentSize == 0 {
+		cfg.SEI.FragmentSize = defaultSEIFragmentSize
 	}
-	if cfg.SEIAckTimeoutMS == 0 {
-		cfg.SEIAckTimeoutMS = defaultSEIAckTimeoutMS
+	if cfg.SEI.AckTimeoutMS == 0 {
+		cfg.SEI.AckTimeoutMS = defaultSEIAckTimeoutMS
 	}
 	return cfg
 }
@@ -394,55 +409,55 @@ func validateTransportConfig(cfg Config) error {
 }
 
 func validateVideoCodec(cfg Config) error {
-	if cfg.VideoCodec != "" && cfg.VideoCodec != videoCodecQRCode && cfg.VideoCodec != videoCodecTile {
+	if cfg.Video.Codec != "" && cfg.Video.Codec != videoCodecQRCode && cfg.Video.Codec != videoCodecTile {
 		return ErrVideoCodecInvalid
 	}
-	if cfg.VideoCodec == videoCodecTile && (cfg.VideoWidth != 1080 || cfg.VideoHeight != 1080) {
+	if cfg.Video.Codec == videoCodecTile && (cfg.Video.Width != 1080 || cfg.Video.Height != 1080) {
 		return ErrTileCodecDimensions
 	}
 	return nil
 }
 
 func validateVideoChannel(cfg Config) error {
-	if cfg.VideoWidth == 0 {
+	if cfg.Video.Width == 0 {
 		return ErrVideoWidthRequired
 	}
-	if cfg.VideoHeight == 0 {
+	if cfg.Video.Height == 0 {
 		return ErrVideoHeightRequired
 	}
-	if cfg.VideoFPS == 0 {
+	if cfg.Video.FPS == 0 {
 		return ErrVideoFPSRequired
 	}
-	if cfg.VideoBitrate == "" {
+	if cfg.Video.Bitrate == "" {
 		return ErrVideoBitrateRequired
 	}
-	if cfg.VideoHW == "" {
+	if cfg.Video.HW == "" {
 		return ErrVideoHWRequired
 	}
 	return validateVideoCodec(cfg)
 }
 
 func validateVP8Channel(cfg Config) error {
-	if cfg.VP8FPS == 0 {
+	if cfg.VP8.FPS == 0 {
 		return ErrVP8FPSRequired
 	}
-	if cfg.VP8BatchSize == 0 {
+	if cfg.VP8.BatchSize == 0 {
 		return ErrVP8BatchSizeRequired
 	}
 	return nil
 }
 
 func validateSEIChannel(cfg Config) error {
-	if cfg.SEIFPS == 0 {
+	if cfg.SEI.FPS == 0 {
 		return ErrSEIFPSRequired
 	}
-	if cfg.SEIBatchSize == 0 {
+	if cfg.SEI.BatchSize == 0 {
 		return ErrSEIBatchSizeRequired
 	}
-	if cfg.SEIFragmentSize == 0 {
+	if cfg.SEI.FragmentSize == 0 {
 		return ErrSEIFragmentSizeRequired
 	}
-	if cfg.SEIAckTimeoutMS == 0 {
+	if cfg.SEI.AckTimeoutMS == 0 {
 		return ErrSEIAckTimeoutRequired
 	}
 	return nil

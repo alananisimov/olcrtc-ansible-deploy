@@ -161,8 +161,8 @@ func TestRunWithArgsAppliesTransportDefaults(t *testing.T) {
 	oldRunSession := runSession
 	t.Cleanup(func() { runSession = oldRunSession })
 	runSession = func(_ context.Context, cfg session.Config) error {
-		if cfg.VP8FPS != 25 || cfg.VP8BatchSize != 1 {
-			t.Fatalf("VP8 defaults = fps %d batch %d, want 25/1", cfg.VP8FPS, cfg.VP8BatchSize)
+		if cfg.VP8.FPS != 25 || cfg.VP8.BatchSize != 1 {
+			t.Fatalf("VP8 defaults = fps %d batch %d, want 25/1", cfg.VP8.FPS, cfg.VP8.BatchSize)
 		}
 		return nil
 	}
@@ -201,8 +201,8 @@ func TestRunWithArgsFailoverProfiles(t *testing.T) {
 	var seen []string
 	runSession = func(_ context.Context, cfg session.Config) error {
 		seen = append(seen, cfg.Auth+"/"+cfg.Transport)
-		if cfg.Auth == "wbstream" && (cfg.VP8FPS != 25 || cfg.VP8BatchSize != 1) {
-			t.Fatalf("VP8 defaults = fps %d batch %d, want 25/1", cfg.VP8FPS, cfg.VP8BatchSize)
+		if cfg.Auth == "wbstream" && (cfg.VP8.FPS != 25 || cfg.VP8.BatchSize != 1) {
+			t.Fatalf("VP8 defaults = fps %d batch %d, want 25/1", cfg.VP8.FPS, cfg.VP8.BatchSize)
 		}
 		return errBoom
 	}

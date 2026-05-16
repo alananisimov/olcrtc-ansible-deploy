@@ -96,8 +96,7 @@ func requireAppliedConfig(t *testing.T, got session.Config) {
 		SOCKSPort:             1080,
 		SOCKSUser:             "u",
 		SOCKSPass:             "p",
-		VP8FPS:                25,
-		VP8BatchSize:          4,
+		VP8:                   session.VP8Config{FPS: 25, BatchSize: 4},
 		LivenessInterval:      "2s",
 		LivenessTimeout:       "500ms",
 		LivenessFailures:      4,
@@ -208,7 +207,7 @@ failover:
 	if first.Auth != "wbstream" || first.Transport != "vp8channel" || first.RoomID != "wb-room" {
 		t.Fatalf("first profile = %+v", first)
 	}
-	if first.KeyHex != "shared-key" || first.DNSServer != "1.1.1.1:53" || first.VP8FPS != 30 ||
+	if first.KeyHex != "shared-key" || first.DNSServer != "1.1.1.1:53" || first.VP8.FPS != 30 ||
 		first.LivenessInterval != "1s" || first.LivenessTimeout != "2s" || first.LivenessFailures != 5 ||
 		first.MaxSessionDuration != "30m" || first.TrafficMaxPayloadSize != 4096 ||
 		first.TrafficMinDelay != "10ms" || first.TrafficMaxDelay != "20ms" {
