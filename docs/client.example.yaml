@@ -14,11 +14,27 @@ room:
   id: "https://meet.cryptopro.ru/REPLACE_WITH_ROOM_NAME"
 
 crypto:
+  # Or use key_file: "./olcrtc.key" to keep the secret out of this file.
   key: "REPLACE_ME_WITH_64_HEX_CHARS"   # must match the server
 
 net:
   transport: datachannel   # must match the server
   dns: "8.8.8.8:53"
+
+liveness:
+  interval: 10s
+  timeout: 5s
+  failures: 3
+
+# Optional planned rebuild for long-running calls.
+# lifecycle:
+#   max_session_duration: 6h
+
+# Optional reliability shaping for encrypted wire messages.
+# traffic:
+#   max_payload_size: 4096
+#   min_delay: 5ms
+#   max_delay: 30ms
 
 # Local SOCKS5 listener exposed to applications
 socks:
