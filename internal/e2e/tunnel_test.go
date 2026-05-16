@@ -21,13 +21,17 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
+	"github.com/openlibrecommunity/olcrtc/internal/engine"
+	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	authSaluteJazz "github.com/openlibrecommunity/olcrtc/internal/auth/salutejazz"
 	authWBStream "github.com/openlibrecommunity/olcrtc/internal/auth/wbstream"
-	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
+	"github.com/openlibrecommunity/olcrtc/internal/transport"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/seichannel"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/videochannel"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/vp8channel"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -37,7 +41,6 @@ const (
 	transportVideo      = "videochannel"
 	transportSEI        = "seichannel"
 	transportVP8        = "vp8channel"
-	linkDirect          = "direct"
 	testRoom            = "room"
 	localDNSServer      = "127.0.0.1:53"
 	videoHWNone         = "none"
@@ -114,21 +117,10 @@ const (
 	realE2EExpectUnstable
 )
 
-type memorySession struct {
-	stream *memoryStream
-}
-
-func (s *memorySession) Capabilities() carrier.Capabilities {
-	return carrier.Capabilities{ByteStream: true, VideoTrack: true}
-}
-
-func (s *memorySession) OpenByteStream() (carrier.ByteStream, error) {
-	return s.stream, nil
-}
-
-func (s *memorySession) OpenVideoTrack() (carrier.VideoTrack, error) {
-	return s.stream, nil
-}
+// memoryStream is registered as an engine.Session directly: it implements
+// every Session method plus engine.VideoTrackCapable (AddVideoTrack /
+// SetVideoTrackHandler aliases below). The wrapper that used to live in
+// memorySession is no longer needed after the carrier-layer collapse.
 
 type memoryRoom struct {
 	mu      sync.Mutex
@@ -269,9 +261,13 @@ func (s *memoryStream) Close() error {
 	return nil
 }
 
-func (s *memoryStream) SetReconnectCallback(cb func()) {
+func (s *memoryStream) SetReconnectCallback(cb func(*webrtc.DataChannel)) {
 	s.mu.Lock()
-	s.reconnect = cb
+	if cb == nil {
+		s.reconnect = nil
+	} else {
+		s.reconnect = func() { cb(nil) }
+	}
 	s.mu.Unlock()
 }
 func (s *memoryStream) SetShouldReconnect(func() bool) {}
@@ -286,15 +282,20 @@ func (s *memoryStream) WatchConnection(ctx context.Context) {
 func (s *memoryStream) CanSend() bool {
 	return s.isConnected()
 }
+func (s *memoryStream) GetSendQueue() chan []byte { return nil }
+func (s *memoryStream) GetBufferedAmount() uint64 { return 0 }
+func (s *memoryStream) Capabilities() engine.Capabilities {
+	return engine.Capabilities{ByteStream: true, VideoTrack: true}
+}
 
-func (s *memoryStream) AddTrack(track webrtc.TrackLocal) error {
+func (s *memoryStream) AddVideoTrack(track webrtc.TrackLocal) error {
 	s.mu.Lock()
 	s.track = track
 	s.mu.Unlock()
 	return nil
 }
 
-func (s *memoryStream) SetTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
+func (s *memoryStream) SetVideoTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
 	s.mu.Lock()
 	s.trackCB = cb
 	s.mu.Unlock()
@@ -332,12 +333,12 @@ func registerMemoryCarrier(t *testing.T) (string, *memoryRoom) {
 
 	name := "e2e-memory-" + t.Name()
 	room := &memoryRoom{streams: make(map[*memoryStream]struct{})}
-	carrier.Register(name, func(_ context.Context, cfg carrier.Config) (carrier.Session, error) {
+	enginebuiltin.Register(name, func(_ context.Context, cfg enginebuiltin.Config) (engine.Session, error) {
 		stream := &memoryStream{room: room, onData: cfg.OnData}
 		room.mu.Lock()
 		room.streams[stream] = struct{}{}
 		room.mu.Unlock()
-		return &memorySession{stream: stream}, nil
+		return stream, nil
 	})
 	return name, room
 }
@@ -346,12 +347,12 @@ func registerMemoryCarrierAs(t *testing.T, name string) {
 	t.Helper()
 
 	room := &memoryRoom{streams: make(map[*memoryStream]struct{})}
-	carrier.Register(name, func(_ context.Context, cfg carrier.Config) (carrier.Session, error) {
+	enginebuiltin.Register(name, func(_ context.Context, cfg enginebuiltin.Config) (engine.Session, error) {
 		stream := &memoryStream{room: room, onData: cfg.OnData}
 		room.mu.Lock()
 		room.streams[stream] = struct{}{}
 		room.mu.Unlock()
-		return &memorySession{stream: stream}, nil
+		return stream, nil
 	})
 }
 
@@ -360,7 +361,7 @@ func registerFailingCarrier(t *testing.T) string {
 	session.RegisterDefaults()
 
 	name := "e2e-fail-" + t.Name()
-	carrier.Register(name, func(context.Context, carrier.Config) (carrier.Session, error) {
+	enginebuiltin.Register(name, func(context.Context, enginebuiltin.Config) (engine.Session, error) {
 		return nil, errFailoverCarrier
 	})
 	return name
@@ -631,54 +632,58 @@ func requireRealRoom(ctx context.Context, t *testing.T, carrierName string) stri
 func validSessionConfig(mode, carrierName, transportName string) session.Config {
 	return session.Config{
 		Mode:            mode,
-		Link:            linkDirect,
-		Transport:       transportName,
-		Auth:            carrierName,
-		RoomID:          testRoom,
-		KeyHex:          testKeyHex,
-		SOCKSHost:       "127.0.0.1",
-		SOCKSPort:       1080,
-		DNSServer:       localDNSServer,
-		VideoWidth:      1080,
-		VideoHeight:     1080,
-		VideoFPS:        30,
-		VideoBitrate:    "1M",
-		VideoHW:         videoHWNone,
-		VideoCodec:      "tile",
-		VideoTileModule: 4,
-		VideoTileRS:     20,
-		VP8FPS:          60,
-		VP8BatchSize:    8,
-		SEIFPS:          30,
-		SEIBatchSize:    4,
-		SEIFragmentSize: 512,
-		SEIAckTimeoutMS: 1500,
+		Transport: transportName,
+		Auth:      carrierName,
+		RoomID:    testRoom,
+		KeyHex:    testKeyHex,
+		SOCKSHost: "127.0.0.1",
+		SOCKSPort: 1080,
+		DNSServer: localDNSServer,
+		Video: session.VideoConfig{
+			Width: 1080, Height: 1080, FPS: 30, Bitrate: "1M",
+			HW: videoHWNone, Codec: "tile", TileModule: 4, TileRS: 20,
+		},
+		VP8: session.VP8Config{FPS: 60, BatchSize: 8},
+		SEI: session.SEIConfig{FPS: 30, BatchSize: 4, FragmentSize: 512, AckTimeoutMS: 1500},
 	}
 }
 
-func validLinkConfig(carrierName, transportName string) link.Config {
+// e2eTransportOptions builds the per-transport options bundle the e2e tests
+// pass into server.Config / client.Config. Values mirror the documented
+// validSessionConfig defaults so server and client end up agreeing on the
+// transport tuning.
+func e2eTransportOptions(transportName string) transport.Options {
+	switch transportName {
+	case "videochannel":
+		return videochannel.Options{
+			Width:      1080,
+			Height:     1080,
+			FPS:        60,
+			Bitrate:    "5000k",
+			HW:         videoHWNone,
+			QRSize:     512,
+			QRRecovery: "low",
+			Codec:      "qrcode",
+			TileModule: 4,
+			TileRS:     20,
+		}
+	case "vp8channel":
+		return vp8channel.Options{FPS: 60, BatchSize: 8}
+	case "seichannel":
+		return seichannel.Options{FPS: 30, BatchSize: 4, FragmentSize: 512, AckTimeoutMS: 1500}
+	}
+	return nil
+}
+
+func validTransportConfig(carrierName, transportName string) transport.Config {
 	cfg := validSessionConfig("cnc", carrierName, transportName)
-	return link.Config{
-		Transport:       cfg.Transport,
-		Carrier:         cfg.Auth,
-		RoomURL:         testRoom,
-		DeviceID:        "e2e-link-test",
-		Name:            "e2e-" + carrierName + "-" + transportName,
-		DNSServer:       cfg.DNSServer,
-		VideoWidth:      cfg.VideoWidth,
-		VideoHeight:     cfg.VideoHeight,
-		VideoFPS:        cfg.VideoFPS,
-		VideoBitrate:    cfg.VideoBitrate,
-		VideoHW:         cfg.VideoHW,
-		VideoCodec:      cfg.VideoCodec,
-		VideoTileModule: cfg.VideoTileModule,
-		VideoTileRS:     cfg.VideoTileRS,
-		VP8FPS:          cfg.VP8FPS,
-		VP8BatchSize:    cfg.VP8BatchSize,
-		SEIFPS:          cfg.SEIFPS,
-		SEIBatchSize:    cfg.SEIBatchSize,
-		SEIFragmentSize: cfg.SEIFragmentSize,
-		SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
+	return transport.Config{
+		Carrier:   cfg.Auth,
+		RoomURL:   testRoom,
+		DeviceID:  "e2e-link-test",
+		Name:      "e2e-" + carrierName + "-" + transportName,
+		DNSServer: cfg.DNSServer,
+		Options:   e2eTransportOptions(transportName),
 	}
 }
 
@@ -751,7 +756,6 @@ func startTunnel(t *testing.T) *tunnelRuntime {
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.Run(ctx, server.Config{
-			Link:      linkDirect,
 			Transport: transportData,
 			Carrier:   carrierName,
 			RoomURL:   testRoom,
@@ -765,7 +769,6 @@ func startTunnel(t *testing.T) *tunnelRuntime {
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(ctx, client.Config{
-			Link:      linkDirect,
 			Transport: transportData,
 			Carrier:   carrierName,
 			RoomURL:   testRoom,
@@ -804,29 +807,13 @@ func startRealTunnel(
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.Run(runCtx, server.Config{
-			Link:            linkDirect,
-			Transport:       transportName,
-			Carrier:         carrierName,
-			RoomURL:         roomURL,
-			ChannelID:       channelID,
-			KeyHex:          testKeyHex,
-			DNSServer:       localDNSServer,
-			VideoWidth:      1080,
-			VideoHeight:     1080,
-			VideoFPS:        60,
-			VideoBitrate:    "5000k",
-			VideoHW:         videoHWNone,
-			VideoQRSize:     512,
-			VideoQRRecovery: "low",
-			VideoCodec:      "qrcode",
-			VideoTileModule: 4,
-			VideoTileRS:     20,
-			VP8FPS:          60,
-			VP8BatchSize:    8,
-			SEIFPS:          30,
-			SEIBatchSize:    4,
-			SEIFragmentSize: 512,
-			SEIAckTimeoutMS: 1500,
+			Transport:        transportName,
+			Carrier:          carrierName,
+			RoomURL:          roomURL,
+			ChannelID:        channelID,
+			KeyHex:           testKeyHex,
+			DNSServer:        localDNSServer,
+			TransportOptions: e2eTransportOptions(transportName),
 		})
 	}()
 
@@ -844,31 +831,15 @@ func startRealTunnel(
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(runCtx, client.Config{
-			Link:            linkDirect,
-			Transport:       transportName,
-			Carrier:         carrierName,
-			RoomURL:         roomURL,
-			ChannelID:       channelID,
-			KeyHex:          testKeyHex,
-			DeviceID:        clientDeviceID,
-			LocalAddr:       socksAddr,
-			DNSServer:       localDNSServer,
-			VideoWidth:      1080,
-			VideoHeight:     1080,
-			VideoFPS:        60,
-			VideoBitrate:    "5000k",
-			VideoHW:         videoHWNone,
-			VideoQRSize:     512,
-			VideoQRRecovery: "low",
-			VideoCodec:      "qrcode",
-			VideoTileModule: 4,
-			VideoTileRS:     20,
-			VP8FPS:          60,
-			VP8BatchSize:    8,
-			SEIFPS:          30,
-			SEIBatchSize:    4,
-			SEIFragmentSize: 512,
-			SEIAckTimeoutMS: 1500,
+			Transport:        transportName,
+			Carrier:          carrierName,
+			RoomURL:          roomURL,
+			ChannelID:        channelID,
+			KeyHex:           testKeyHex,
+			DeviceID:         clientDeviceID,
+			LocalAddr:        socksAddr,
+			DNSServer:        localDNSServer,
+			TransportOptions: e2eTransportOptions(transportName),
 		}, func() { close(ready) })
 	}()
 
@@ -1018,7 +989,7 @@ func TestBuiltInProviderTransportMatrixValidates(t *testing.T) {
 	}
 }
 
-func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
+func TestTransportCreatesAllProviderTransportCombinations(t *testing.T) {
 	session.RegisterDefaults()
 
 	for _, carrierName := range builtInCarrierNames() {
@@ -1029,11 +1000,11 @@ func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
 		t.Run(carrierName, func(t *testing.T) {
 			for _, transportName := range builtInTransportNames() {
 				t.Run(transportName, func(t *testing.T) {
-					ln, err := link.New(context.Background(), linkDirect, validLinkConfig(carrierName, transportName))
+					tr, err := transport.New(context.Background(), transportName, validTransportConfig(carrierName, transportName))
 					if err != nil {
-						t.Fatalf("link.New() error = %v", err)
+						t.Fatalf("transport.New() error = %v", err)
 					}
-					if err := ln.Close(); err != nil {
+					if err := tr.Close(); err != nil {
 						t.Fatalf("Close() error = %v", err)
 					}
 				})
@@ -1042,7 +1013,7 @@ func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
 	}
 }
 
-func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
+func TestTransportConnectsFastProviderTransportMatrix(t *testing.T) {
 	session.RegisterDefaults()
 
 	for _, carrierName := range builtInCarrierNames() {
@@ -1053,15 +1024,15 @@ func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
 		t.Run(carrierName, func(t *testing.T) {
 			for _, transportName := range []string{transportData, transportSEI} {
 				t.Run(transportName, func(t *testing.T) {
-					ln, err := link.New(context.Background(), linkDirect, validLinkConfig(carrierName, transportName))
+					tr, err := transport.New(context.Background(), transportName, validTransportConfig(carrierName, transportName))
 					if err != nil {
-						t.Fatalf("link.New() error = %v", err)
+						t.Fatalf("transport.New() error = %v", err)
 					}
-					if err := ln.Connect(context.Background()); err != nil {
+					if err := tr.Connect(context.Background()); err != nil {
 						t.Fatalf("Connect() error = %v", err)
 					}
-					assertLinkCanSendAfterConnect(t, ln, transportName)
-					if err := ln.Close(); err != nil {
+					assertTransportCanSendAfterConnect(t, tr, transportName)
+					if err := tr.Close(); err != nil {
 						t.Fatalf("Close() error = %v", err)
 					}
 				})
@@ -1070,16 +1041,16 @@ func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
 	}
 }
 
-func assertLinkCanSendAfterConnect(t *testing.T, ln link.Link, transportName string) {
+func assertTransportCanSendAfterConnect(t *testing.T, tr transport.Transport, transportName string) {
 	t.Helper()
 
 	if transportName == transportSEI {
-		if ln.CanSend() {
+		if tr.CanSend() {
 			t.Fatal("CanSend() = true before peer seichannel frame")
 		}
 		return
 	}
-	if !ln.CanSend() {
+	if !tr.CanSend() {
 		t.Fatal("CanSend() = false, want true")
 	}
 }
@@ -1114,7 +1085,7 @@ func TestRealProviderTransportMatrix(t *testing.T) {
 					expectation := realE2ECaseExpectation(carrierName, transportName)
 					label := realE2EExpectationLabel(expectation)
 					err := runRealE2ECase(t, carrierName, transportName, roomURL, echoAddr)
-					if err != nil && errors.Is(err, carrier.ErrAuthFailed) {
+					if err != nil && errors.Is(err, enginebuiltin.ErrAuthFailed) {
 						authFailed = true
 						t.Skipf("skip %s real e2e: auth failed: %v", carrierName, err)
 					}
@@ -1301,7 +1272,6 @@ func TestSupervisorFailoverProfilesReachWorkingSOCKS(t *testing.T) {
 func failoverSessionConfig(mode, carrierName, socksHost string, socksPort int) session.Config {
 	cfg := session.Config{
 		Mode:      mode,
-		Link:      linkDirect,
 		Transport: transportData,
 		Auth:      carrierName,
 		RoomID:    testRoom,
@@ -1317,33 +1287,17 @@ func failoverSessionConfig(mode, carrierName, socksHost string, socksPort int) s
 
 func clientConfigFromSession(cfg session.Config, socksAddr string) client.Config {
 	return client.Config{
-		Link:            cfg.Link,
-		Transport:       cfg.Transport,
-		Carrier:         cfg.Auth,
-		RoomURL:         cfg.RoomID,
-		KeyHex:          cfg.KeyHex,
-		LocalAddr:       socksAddr,
-		DNSServer:       cfg.DNSServer,
-		DeviceID:        testClientDeviceID,
-		VideoWidth:      cfg.VideoWidth,
-		VideoHeight:     cfg.VideoHeight,
-		VideoFPS:        cfg.VideoFPS,
-		VideoBitrate:    cfg.VideoBitrate,
-		VideoHW:         cfg.VideoHW,
-		VideoQRSize:     cfg.VideoQRSize,
-		VideoQRRecovery: cfg.VideoQRRecovery,
-		VideoCodec:      cfg.VideoCodec,
-		VideoTileModule: cfg.VideoTileModule,
-		VideoTileRS:     cfg.VideoTileRS,
-		VP8FPS:          cfg.VP8FPS,
-		VP8BatchSize:    cfg.VP8BatchSize,
-		SEIFPS:          cfg.SEIFPS,
-		SEIBatchSize:    cfg.SEIBatchSize,
-		SEIFragmentSize: cfg.SEIFragmentSize,
-		SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
-		Engine:          cfg.Engine,
-		URL:             cfg.URL,
-		Token:           cfg.Token,
+		Transport:        cfg.Transport,
+		Carrier:          cfg.Auth,
+		RoomURL:          cfg.RoomID,
+		KeyHex:           cfg.KeyHex,
+		LocalAddr:        socksAddr,
+		DNSServer:        cfg.DNSServer,
+		DeviceID:         testClientDeviceID,
+		TransportOptions: e2eTransportOptions(cfg.Transport),
+		Engine:           cfg.Engine,
+		URL:              cfg.URL,
+		Token:            cfg.Token,
 	}
 }
 

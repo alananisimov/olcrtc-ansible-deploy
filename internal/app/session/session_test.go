@@ -22,62 +22,47 @@ func TestApplyTransportDefaults(t *testing.T) {
 		{
 			name: "vp8",
 			in:   Config{Transport: transportVP8},
-			want: Config{Transport: transportVP8, VP8FPS: 25, VP8BatchSize: 1},
+			want: Config{Transport: transportVP8, VP8: VP8Config{FPS: 25, BatchSize: 1}},
 		},
 		{
 			name: "sei",
 			in:   Config{Transport: transportSEI},
 			want: Config{
-				Transport:       transportSEI,
-				SEIFPS:          60,
-				SEIBatchSize:    64,
-				SEIFragmentSize: 900,
-				SEIAckTimeoutMS: 2000,
+				Transport: transportSEI,
+				SEI:       SEIConfig{FPS: 60, BatchSize: 64, FragmentSize: 900, AckTimeoutMS: 2000},
 			},
 		},
 		{
 			name: "video qrcode",
 			in:   Config{Transport: transportVideo},
 			want: Config{
-				Transport:       transportVideo,
-				VideoWidth:      1920,
-				VideoHeight:     1080,
-				VideoFPS:        30,
-				VideoBitrate:    "2M",
-				VideoHW:         defaultVideoHW,
-				VideoQRRecovery: "low",
-				VideoCodec:      videoCodecQRCode,
+				Transport: transportVideo,
+				Video: VideoConfig{
+					Width: 1920, Height: 1080, FPS: 30, Bitrate: "2M",
+					HW: defaultVideoHW, QRRecovery: "low", Codec: videoCodecQRCode,
+				},
 			},
 		},
 		{
 			name: "video tile dimensions",
-			in:   Config{Transport: transportVideo, VideoCodec: videoCodecTile},
+			in:   Config{Transport: transportVideo, Video: VideoConfig{Codec: videoCodecTile}},
 			want: Config{
-				Transport:       transportVideo,
-				VideoWidth:      1080,
-				VideoHeight:     1080,
-				VideoFPS:        30,
-				VideoBitrate:    "2M",
-				VideoHW:         defaultVideoHW,
-				VideoQRRecovery: "low",
-				VideoCodec:      videoCodecTile,
+				Transport: transportVideo,
+				Video: VideoConfig{
+					Width: 1080, Height: 1080, FPS: 30, Bitrate: "2M",
+					HW: defaultVideoHW, QRRecovery: "low", Codec: videoCodecTile,
+				},
 			},
 		},
 		{
 			name: "keeps explicit values",
 			in: Config{
-				Transport:       transportSEI,
-				SEIFPS:          10,
-				SEIBatchSize:    2,
-				SEIFragmentSize: 300,
-				SEIAckTimeoutMS: 1500,
+				Transport: transportSEI,
+				SEI:       SEIConfig{FPS: 10, BatchSize: 2, FragmentSize: 300, AckTimeoutMS: 1500},
 			},
 			want: Config{
-				Transport:       transportSEI,
-				SEIFPS:          10,
-				SEIBatchSize:    2,
-				SEIFragmentSize: 300,
-				SEIAckTimeoutMS: 1500,
+				Transport: transportSEI,
+				SEI:       SEIConfig{FPS: 10, BatchSize: 2, FragmentSize: 300, AckTimeoutMS: 1500},
 			},
 		},
 	}
@@ -141,7 +126,6 @@ func TestValidate(t *testing.T) {
 
 	base := Config{
 		Mode:      modeSRV,
-		Link:      "direct",
 		Transport: "datachannel",
 		Auth:      "telemost",
 		RoomID:    "room-1",
@@ -193,15 +177,6 @@ func TestValidate(t *testing.T) {
 			want: ErrUnsupportedCarrier,
 		},
 		{
-			name: "unsupported link",
-			cfg: func() Config {
-				cfg := base
-				cfg.Link = "unknown"
-				return cfg
-			}(),
-			want: ErrUnsupportedLink,
-		},
-		{
 			name: "unsupported transport",
 			cfg: func() Config {
 				cfg := base
@@ -251,12 +226,12 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 640
-				cfg.VideoHeight = 480
-				cfg.VideoFPS = 30
-				cfg.VideoBitrate = "1M"
-				cfg.VideoHW = defaultVideoHW
-				cfg.VideoCodec = "bogus"
+				cfg.Video.Width = 640
+				cfg.Video.Height = 480
+				cfg.Video.FPS = 30
+				cfg.Video.Bitrate = "1M"
+				cfg.Video.HW = defaultVideoHW
+				cfg.Video.Codec = "bogus"
 				return cfg
 			}(),
 			want: ErrVideoCodecInvalid,
@@ -266,7 +241,7 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 640
+				cfg.Video.Width = 640
 				return cfg
 			}(),
 			want: ErrVideoHeightRequired,
@@ -276,8 +251,8 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 640
-				cfg.VideoHeight = 480
+				cfg.Video.Width = 640
+				cfg.Video.Height = 480
 				return cfg
 			}(),
 			want: ErrVideoFPSRequired,
@@ -287,9 +262,9 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 640
-				cfg.VideoHeight = 480
-				cfg.VideoFPS = 30
+				cfg.Video.Width = 640
+				cfg.Video.Height = 480
+				cfg.Video.FPS = 30
 				return cfg
 			}(),
 			want: ErrVideoBitrateRequired,
@@ -299,10 +274,10 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 640
-				cfg.VideoHeight = 480
-				cfg.VideoFPS = 30
-				cfg.VideoBitrate = "1M"
+				cfg.Video.Width = 640
+				cfg.Video.Height = 480
+				cfg.Video.FPS = 30
+				cfg.Video.Bitrate = "1M"
 				return cfg
 			}(),
 			want: ErrVideoHWRequired,
@@ -312,12 +287,12 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 640
-				cfg.VideoHeight = 480
-				cfg.VideoFPS = 30
-				cfg.VideoBitrate = "1M"
-				cfg.VideoHW = defaultVideoHW
-				cfg.VideoCodec = "tile"
+				cfg.Video.Width = 640
+				cfg.Video.Height = 480
+				cfg.Video.FPS = 30
+				cfg.Video.Bitrate = "1M"
+				cfg.Video.HW = defaultVideoHW
+				cfg.Video.Codec = "tile"
 				return cfg
 			}(),
 			want: ErrTileCodecDimensions,
@@ -327,12 +302,12 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "videochannel"
-				cfg.VideoWidth = 1080
-				cfg.VideoHeight = 1080
-				cfg.VideoFPS = 30
-				cfg.VideoBitrate = "1M"
-				cfg.VideoHW = defaultVideoHW
-				cfg.VideoCodec = "tile"
+				cfg.Video.Width = 1080
+				cfg.Video.Height = 1080
+				cfg.Video.FPS = 30
+				cfg.Video.Bitrate = "1M"
+				cfg.Video.HW = defaultVideoHW
+				cfg.Video.Codec = "tile"
 				return cfg
 			}(),
 		},
@@ -350,7 +325,7 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "vp8channel"
-				cfg.VP8FPS = 25
+				cfg.VP8.FPS = 25
 				return cfg
 			}(),
 			want: ErrVP8BatchSizeRequired,
@@ -360,8 +335,8 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "vp8channel"
-				cfg.VP8FPS = 25
-				cfg.VP8BatchSize = 16
+				cfg.VP8.FPS = 25
+				cfg.VP8.BatchSize = 16
 				return cfg
 			}(),
 		},
@@ -379,7 +354,7 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "seichannel"
-				cfg.SEIFPS = 20
+				cfg.SEI.FPS = 20
 				return cfg
 			}(),
 			want: ErrSEIBatchSizeRequired,
@@ -389,8 +364,8 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "seichannel"
-				cfg.SEIFPS = 20
-				cfg.SEIBatchSize = 1
+				cfg.SEI.FPS = 20
+				cfg.SEI.BatchSize = 1
 				return cfg
 			}(),
 			want: ErrSEIFragmentSizeRequired,
@@ -400,9 +375,9 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "seichannel"
-				cfg.SEIFPS = 20
-				cfg.SEIBatchSize = 1
-				cfg.SEIFragmentSize = 900
+				cfg.SEI.FPS = 20
+				cfg.SEI.BatchSize = 1
+				cfg.SEI.FragmentSize = 900
 				return cfg
 			}(),
 			want: ErrSEIAckTimeoutRequired,
@@ -412,10 +387,10 @@ func TestValidate(t *testing.T) {
 			cfg: func() Config {
 				cfg := base
 				cfg.Transport = "seichannel"
-				cfg.SEIFPS = 20
-				cfg.SEIBatchSize = 1
-				cfg.SEIFragmentSize = 900
-				cfg.SEIAckTimeoutMS = 3000
+				cfg.SEI.FPS = 20
+				cfg.SEI.BatchSize = 1
+				cfg.SEI.FragmentSize = 900
+				cfg.SEI.AckTimeoutMS = 3000
 				return cfg
 			}(),
 		},

@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,10 +16,10 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/handshake"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
+	"github.com/openlibrecommunity/olcrtc/internal/runtime"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/xtaci/smux"
 )
@@ -28,10 +27,11 @@ import (
 const connectCommand = "connect"
 
 var (
-	// ErrKeyRequired is returned when no encryption key is provided.
-	ErrKeyRequired = errors.New("key required (use -key <hex>)")
-	// ErrKeySize is returned when the encryption key is not 32 bytes.
-	ErrKeySize = errors.New("key must be 32 bytes")
+	// ErrKeyRequired re-exports runtime.ErrKeyRequired for compatibility with
+	// pre-runtime callers that errors.Is-checked it.
+	ErrKeyRequired = runtime.ErrKeyRequired
+	// ErrKeySize re-exports runtime.ErrKeySize for the same reason.
+	ErrKeySize = runtime.ErrKeySize
 	// ErrSocks5AuthFailed is returned when SOCKS5 authentication fails.
 	ErrSocks5AuthFailed = errors.New("SOCKS5 auth failed")
 	// ErrSocks5ConnectFailed is returned when SOCKS5 connection fails.
@@ -56,20 +56,18 @@ type HealthFunc func(control.Status)
 
 // Server handles incoming tunnel connections and proxies their traffic.
 type Server struct {
-	ln             link.Link
+	ln             transport.Transport
 	cipher         *crypto.Cipher
 	conn           *muxconn.Conn
 	session        *smux.Session
 	controlStop    context.CancelFunc
 	sessMu         sync.RWMutex
 	reinstallMu    sync.Mutex
-	healthMu       sync.RWMutex
 	wg             sync.WaitGroup
 	authHook       handshake.AuthFunc
 	onOpen         SessionOpenFunc
 	onClose        SessionCloseFunc
 	onTraffic      TrafficFunc
-	onHealth       HealthFunc
 	deviceID       string
 	sessionID      string
 	dnsServer      string
@@ -77,7 +75,7 @@ type Server struct {
 	socksProxyAddr string
 	socksProxyPort int
 	liveness       control.Config
-	health         control.Status
+	health         *runtime.HealthTracker
 }
 
 // ConnectRequest is a message from the client to establish a new connection.
@@ -89,36 +87,20 @@ type ConnectRequest struct {
 
 // Config holds runtime configuration for [Run].
 type Config struct {
-	Link            string
-	Transport       string
-	Carrier         string
-	RoomURL         string
-	ChannelID       string
-	KeyHex          string
-	DNSServer       string
-	SOCKSProxyAddr  string
-	SOCKSProxyPort  int
-	VideoWidth      int
-	VideoHeight     int
-	VideoFPS        int
-	VideoBitrate    string
-	VideoHW         string
-	VideoQRSize     int
-	VideoQRRecovery string
-	VideoCodec      string
-	VideoTileModule int
-	VideoTileRS     int
-	VP8FPS          int
-	VP8BatchSize    int
-	SEIFPS          int
-	SEIBatchSize    int
-	SEIFragmentSize int
-	SEIAckTimeoutMS int
-	Engine          string
-	URL             string
-	Token           string
-	Liveness        control.Config
-	Traffic         transport.TrafficConfig
+	Transport        string
+	Carrier          string
+	RoomURL          string
+	ChannelID        string
+	KeyHex           string
+	DNSServer        string
+	SOCKSProxyAddr   string
+	SOCKSProxyPort   int
+	TransportOptions transport.Options
+	Engine           string
+	URL              string
+	Token            string
+	Liveness         control.Config
+	Traffic          transport.TrafficConfig
 
 	// AuthHook is invoked after CLIENT_HELLO to authorize the client and
 	// return a session ID. If nil, every client is admitted with a random UUID.
@@ -160,22 +142,17 @@ func Run(ctx context.Context, cfg Config) error {
 	if onTraffic == nil {
 		onTraffic = func(string, string, uint64, uint64) {}
 	}
-	onHealth := cfg.OnHealth
-	if onHealth == nil {
-		onHealth = func(control.Status) {}
-	}
-
 	s := &Server{
 		cipher:         cipher,
 		authHook:       hook,
 		onOpen:         onOpen,
 		onClose:        onClose,
 		onTraffic:      onTraffic,
-		onHealth:       onHealth,
 		dnsServer:      cfg.DNSServer,
 		socksProxyAddr: cfg.SOCKSProxyAddr,
 		socksProxyPort: cfg.SOCKSProxyPort,
 		liveness:       cfg.Liveness,
+		health:         runtime.NewHealthTracker(cfg.OnHealth),
 	}
 	s.setupResolver()
 
@@ -206,21 +183,9 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 func setupCipher(keyHex string) (*crypto.Cipher, error) {
-	if keyHex == "" {
-		return nil, ErrKeyRequired
-	}
-
-	key, err := hex.DecodeString(keyHex)
+	cipher, err := runtime.SetupCipher(keyHex)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode key: %w", err)
-	}
-	if len(key) != 32 {
-		return nil, fmt.Errorf("%w, got %d", ErrKeySize, len(key))
-	}
-
-	cipher, err := crypto.NewCipher(string(key))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
+		return nil, fmt.Errorf("server: %w", err)
 	}
 	return cipher, nil
 }
@@ -235,32 +200,12 @@ func (s *Server) setupResolver() {
 	}
 }
 
-// smuxConfig mirrors the client side. Both peers must agree on Version and
-// MaxFrameSize.
-func smuxConfig(maxWirePayload ...int) *smux.Config {
-	cfg := smux.DefaultConfig()
-	cfg.Version = 2
-	cfg.KeepAliveDisabled = true
-	cfg.MaxFrameSize = 32768
-	if len(maxWirePayload) > 0 && maxWirePayload[0] > crypto.WireOverhead {
-		maxFrameSize := maxWirePayload[0] - crypto.WireOverhead
-		if maxFrameSize < cfg.MaxFrameSize {
-			cfg.MaxFrameSize = maxFrameSize
-		}
-	}
-	cfg.MaxReceiveBuffer = 16 * 1024 * 1024
-	cfg.MaxStreamBuffer = 1024 * 1024
-	cfg.KeepAliveInterval = 10 * time.Second
-	cfg.KeepAliveTimeout = 60 * time.Second
-	return cfg
+func smuxConfig(maxWirePayload int) *smux.Config {
+	return runtime.SmuxConfig(maxWirePayload)
 }
 
-func linkMaxPayload(ln link.Link) int {
-	provider, ok := ln.(link.FeaturesProvider)
-	if !ok {
-		return 0
-	}
-	return provider.Features().MaxPayloadSize
+func linkMaxPayload(tr transport.Transport) int {
+	return runtime.MaxPayload(tr)
 }
 
 func (s *Server) bringUpLink(
@@ -268,40 +213,24 @@ func (s *Server) bringUpLink(
 	cfg Config,
 	cancel context.CancelFunc,
 ) error {
-	ln, err := link.New(ctx, cfg.Link, link.Config{
-		Transport:       cfg.Transport,
-		Carrier:         cfg.Carrier,
-		RoomURL:         cfg.RoomURL,
-		Engine:          cfg.Engine,
-		URL:             cfg.URL,
-		Token:           cfg.Token,
-		ChannelID:       cfg.ChannelID,
-		DeviceID:        "",
-		Name:            names.Generate(),
-		OnData:          s.onData,
-		DNSServer:       s.dnsServer,
-		ProxyAddr:       s.socksProxyAddr,
-		ProxyPort:       s.socksProxyPort,
-		VideoWidth:      cfg.VideoWidth,
-		VideoHeight:     cfg.VideoHeight,
-		VideoFPS:        cfg.VideoFPS,
-		VideoBitrate:    cfg.VideoBitrate,
-		VideoHW:         cfg.VideoHW,
-		VideoQRSize:     cfg.VideoQRSize,
-		VideoQRRecovery: cfg.VideoQRRecovery,
-		VideoCodec:      cfg.VideoCodec,
-		VideoTileModule: cfg.VideoTileModule,
-		VideoTileRS:     cfg.VideoTileRS,
-		VP8FPS:          cfg.VP8FPS,
-		VP8BatchSize:    cfg.VP8BatchSize,
-		SEIFPS:          cfg.SEIFPS,
-		SEIBatchSize:    cfg.SEIBatchSize,
-		SEIFragmentSize: cfg.SEIFragmentSize,
-		SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
-		Traffic:         cfg.Traffic,
+	ln, err := transport.New(ctx, cfg.Transport, transport.Config{
+		Carrier:   cfg.Carrier,
+		RoomURL:   cfg.RoomURL,
+		Engine:    cfg.Engine,
+		URL:       cfg.URL,
+		Token:     cfg.Token,
+		ChannelID: cfg.ChannelID,
+		DeviceID:  "",
+		Name:      names.Generate(),
+		OnData:    s.onData,
+		DNSServer: s.dnsServer,
+		ProxyAddr: s.socksProxyAddr,
+		ProxyPort: s.socksProxyPort,
+		Options:   cfg.TransportOptions,
+		Traffic:   cfg.Traffic,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create link: %w", err)
+		return fmt.Errorf("failed to create transport: %w", err)
 	}
 	s.ln = ln
 
@@ -317,7 +246,7 @@ func (s *Server) bringUpLink(
 		s.handleReconnect()
 	})
 
-	logger.Infof("Connecting link via %s/%s/%s...", cfg.Link, cfg.Transport, cfg.Carrier)
+	logger.Infof("Connecting transport=%s carrier=%s ...", cfg.Transport, cfg.Carrier)
 	if err := ln.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect link: %w", err)
 	}
@@ -585,61 +514,14 @@ func (s *Server) startControlLoop(ctx context.Context, sess *smux.Session, strea
 
 // Status returns the latest server-side control health snapshot.
 func (s *Server) Status() control.Status {
-	s.healthMu.RLock()
-	defer s.healthMu.RUnlock()
-	return s.health
+	return s.health.Status()
 }
 
-func (s *Server) recordSession(sessionID string) {
-	s.healthMu.Lock()
-	s.health.SessionID = sessionID
-	s.health.MissedPongs = 0
-	status := s.health
-	s.healthMu.Unlock()
-	s.notifyHealth(status)
-}
-
-func (s *Server) recordPong(h control.Health) {
-	s.healthMu.Lock()
-	s.health.LastPong = h.LastSeen
-	s.health.LastRTT = h.RTT
-	s.health.MissedPongs = 0
-	status := s.health
-	s.healthMu.Unlock()
-	s.notifyHealth(status)
-}
-
-func (s *Server) recordMissed(missed int) {
-	s.healthMu.Lock()
-	s.health.MissedPongs = missed
-	status := s.health
-	s.healthMu.Unlock()
-	s.notifyHealth(status)
-}
-
-func (s *Server) recordUnhealthy(missed int) {
-	s.healthMu.Lock()
-	s.health.MissedPongs = missed
-	s.health.UnhealthyEvents++
-	s.health.LastUnhealthy = time.Now()
-	status := s.health
-	s.healthMu.Unlock()
-	s.notifyHealth(status)
-}
-
-func (s *Server) recordReconnect() {
-	s.healthMu.Lock()
-	s.health.Reconnects++
-	status := s.health
-	s.healthMu.Unlock()
-	s.notifyHealth(status)
-}
-
-func (s *Server) notifyHealth(status control.Status) {
-	if s.onHealth != nil {
-		s.onHealth(status)
-	}
-}
+func (s *Server) recordSession(sessionID string)  { s.health.RecordSession(sessionID) }
+func (s *Server) recordPong(h control.Health)     { s.health.RecordPong(h) }
+func (s *Server) recordMissed(missed int)         { s.health.RecordMissed(missed) }
+func (s *Server) recordUnhealthy(missed int)      { s.health.RecordUnhealthy(missed) }
+func (s *Server) recordReconnect()                { s.health.RecordReconnect() }
 
 func (s *Server) shutdown() {
 	s.closeSession()

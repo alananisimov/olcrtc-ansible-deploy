@@ -24,16 +24,16 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
+	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
 // ErrClosed is returned from Read/Write after the conn has been closed.
 var ErrClosed = errors.New("muxconn: closed")
 
-// Conn is an io.ReadWriteCloser over a link.Link with optional AEAD wrapping.
+// Conn is an io.ReadWriteCloser over a [transport.Transport] with optional AEAD wrapping.
 type Conn struct {
-	ln     link.Link
+	ln     transport.Transport
 	cipher *crypto.Cipher
 
 	mu     sync.Mutex
@@ -42,9 +42,9 @@ type Conn struct {
 	closed bool
 }
 
-// New wires a Conn over the given link. Push must be set as the link's OnData
-// callback before this conn is used.
-func New(ln link.Link, cipher *crypto.Cipher) *Conn {
+// New wires a Conn over the given transport. Push must be set as the
+// transport's OnData callback before this conn is used.
+func New(ln transport.Transport, cipher *crypto.Cipher) *Conn {
 	c := &Conn{ln: ln, cipher: cipher}
 	c.cond = sync.NewCond(&c.mu)
 	return c

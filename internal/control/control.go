@@ -12,13 +12,14 @@ package control
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"time"
+
+	"github.com/openlibrecommunity/olcrtc/internal/framing"
 )
 
 const (
@@ -53,7 +54,7 @@ var (
 	// ErrUnexpectedMessage is returned for unknown or malformed control message types.
 	ErrUnexpectedMessage = errors.New("unexpected control message")
 	// ErrFrameTooLarge is returned when a frame exceeds [MaxMessageSize].
-	ErrFrameTooLarge = errors.New("control frame too large")
+	ErrFrameTooLarge = framing.ErrFrameTooLarge
 )
 
 // Message is one control-stream frame.
@@ -308,36 +309,16 @@ func parseMessage(raw []byte) (Message, error) {
 }
 
 func writeFrame(w io.Writer, msg Message) error {
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("marshal control message: %w", err)
-	}
-	if len(body) > MaxMessageSize {
-		return fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, len(body), MaxMessageSize)
-	}
-	var hdr [4]byte
-	binary.BigEndian.PutUint32(hdr[:], uint32(len(body))) //nolint:gosec // len(body) bounded by MaxMessageSize
-	if _, err := w.Write(hdr[:]); err != nil {
-		return fmt.Errorf("write control hdr: %w", err)
-	}
-	if _, err := w.Write(body); err != nil {
-		return fmt.Errorf("write control body: %w", err)
+	if err := framing.WriteJSON(w, msg, MaxMessageSize); err != nil {
+		return fmt.Errorf("control: %w", err)
 	}
 	return nil
 }
 
 func readFrame(r io.Reader) ([]byte, error) {
-	var hdr [4]byte
-	if _, err := io.ReadFull(r, hdr[:]); err != nil {
-		return nil, fmt.Errorf("read control hdr: %w", err)
+	body, err := framing.ReadBytes(r, MaxMessageSize)
+	if err != nil {
+		return nil, fmt.Errorf("control: %w", err)
 	}
-	n := binary.BigEndian.Uint32(hdr[:])
-	if n > MaxMessageSize {
-		return nil, fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, n, MaxMessageSize)
-	}
-	buf := make([]byte, n)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, fmt.Errorf("read control body: %w", err)
-	}
-	return buf, nil
+	return body, nil
 }

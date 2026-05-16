@@ -19,6 +19,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 
+	"github.com/openlibrecommunity/olcrtc/internal/transport/vp8channel"
+
 	_ "golang.org/x/mobile/bind"                       // ensure gomobile bind is available
 	_ "google.golang.org/genproto/protobuf/field_mask" // keep gomobile on post-split genproto modules
 )
@@ -48,7 +50,6 @@ var (
 )
 
 const (
-	defaultLink        = "direct"
 	defaultTransport   = "vp8channel"
 	dataTransport      = "datachannel"
 	defaultDNSServer   = "1.1.1.1:53"
@@ -78,7 +79,6 @@ var (
 )
 
 type mobileConfig struct {
-	link             string
 	transport        string
 	dnsServer        string
 	vp8FPS           int
@@ -119,15 +119,6 @@ func SetTransport(transport string) {
 	defer mu.Unlock()
 	ensureDefaultConfigLocked()
 	defaults.transport = normalizeTransport(transport)
-}
-
-// SetLink selects the link used by Start.
-// Supported value today: direct.
-func SetLink(link string) {
-	mu.Lock()
-	defer mu.Unlock()
-	ensureDefaultConfigLocked()
-	defaults.link = link
 }
 
 // SetDNS selects the DNS server used by the tunnel.
@@ -241,17 +232,18 @@ func Check(
 		doneCh <- runClientWithReady(
 			ctx,
 			client.Config{
-				Link:         defaultLink,
-				Transport:    transportName,
-				Carrier:      carrierName,
-				RoomURL:      buildRoomURL(carrierName, roomID),
-				KeyHex:       keyHex,
-				DeviceID:     clientID,
-				LocalAddr:    fmt.Sprintf("127.0.0.1:%d", socksPort),
-				DNSServer:    defaultDNSServer,
-				VP8FPS:       clampAtLeastOne(vp8FPS, 120),
-				VP8BatchSize: clampAtLeastOne(vp8BatchSize, 64),
-				Liveness:     livenessConfig(cfg),
+				Transport: transportName,
+				Carrier:   carrierName,
+				RoomURL:   buildRoomURL(carrierName, roomID),
+				KeyHex:    keyHex,
+				DeviceID:  clientID,
+				LocalAddr: fmt.Sprintf("127.0.0.1:%d", socksPort),
+				DNSServer: defaultDNSServer,
+				TransportOptions: vp8channel.Options{
+					FPS:       clampAtLeastOne(vp8FPS, 120),
+					BatchSize: clampAtLeastOne(vp8BatchSize, 64),
+				},
+				Liveness: livenessConfig(cfg),
 			},
 			func() {
 				readyOnce.Do(func() {
@@ -330,17 +322,18 @@ func Ping(
 		doneCh <- runClientWithReady(
 			ctx,
 			client.Config{
-				Link:         defaultLink,
-				Transport:    transportName,
-				Carrier:      carrierName,
-				RoomURL:      buildRoomURL(carrierName, roomID),
-				KeyHex:       keyHex,
-				DeviceID:     clientID,
-				LocalAddr:    fmt.Sprintf("127.0.0.1:%d", socksPort),
-				DNSServer:    defaultDNSServer,
-				VP8FPS:       clampAtLeastOne(vp8FPS, 120),
-				VP8BatchSize: clampAtLeastOne(vp8BatchSize, 64),
-				Liveness:     livenessConfig(cfg),
+				Transport: transportName,
+				Carrier:   carrierName,
+				RoomURL:   buildRoomURL(carrierName, roomID),
+				KeyHex:    keyHex,
+				DeviceID:  clientID,
+				LocalAddr: fmt.Sprintf("127.0.0.1:%d", socksPort),
+				DNSServer: defaultDNSServer,
+				TransportOptions: vp8channel.Options{
+					FPS:       clampAtLeastOne(vp8FPS, 120),
+					BatchSize: clampAtLeastOne(vp8BatchSize, 64),
+				},
+				Liveness: livenessConfig(cfg),
 			},
 			func() {
 				readyOnce.Do(func() {
@@ -576,19 +569,20 @@ func startWithConfig(
 		err := runClientWithReady(
 			ctx,
 			client.Config{
-				Link:         cfg.link,
-				Transport:    cfg.transport,
-				Carrier:      carrierName,
-				RoomURL:      roomURL,
-				KeyHex:       keyHex,
-				DeviceID:     clientID,
-				LocalAddr:    fmt.Sprintf("127.0.0.1:%d", socksPort),
-				DNSServer:    cfg.dnsServer,
-				SOCKSUser:    socksUser,
-				SOCKSPass:    socksPass,
-				VP8FPS:       cfg.vp8FPS,
-				VP8BatchSize: cfg.vp8BatchSize,
-				Liveness:     livenessConfig(cfg),
+				Transport: cfg.transport,
+				Carrier:   carrierName,
+				RoomURL:   roomURL,
+				KeyHex:    keyHex,
+				DeviceID:  clientID,
+				LocalAddr: fmt.Sprintf("127.0.0.1:%d", socksPort),
+				DNSServer: cfg.dnsServer,
+				SOCKSUser: socksUser,
+				SOCKSPass: socksPass,
+				TransportOptions: vp8channel.Options{
+					FPS:       cfg.vp8FPS,
+					BatchSize: cfg.vp8BatchSize,
+				},
+				Liveness: livenessConfig(cfg),
 			},
 			func() {
 				readyOnce.Do(func() {
@@ -699,7 +693,6 @@ func waitForCheckDone(doneCh <-chan error) {
 func ensureDefaultConfigLocked() {
 	defaultsSet.Do(func() {
 		defaults = mobileConfig{
-			link:             defaultLink,
 			transport:        defaultTransport,
 			dnsServer:        defaultDNSServer,
 			vp8FPS:           60,

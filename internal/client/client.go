@@ -4,7 +4,6 @@ package client
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,10 +19,10 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/handshake"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
+	"github.com/openlibrecommunity/olcrtc/internal/runtime"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/xtaci/smux"
 )
@@ -34,7 +33,8 @@ var (
 	// ErrProxyAuth is returned when SOCKS proxy authentication fails.
 	ErrProxyAuth = errors.New("SOCKS proxy auth failed")
 	// ErrKeySize is returned when the encryption key is not 32 bytes.
-	ErrKeySize = errors.New("key must be 32 bytes")
+	// Re-exported from runtime for compatibility with errors.Is callers.
+	ErrKeySize = runtime.ErrKeySize
 	// ErrInvalidSOCKSVersion is returned when the SOCKS version is not 5.
 	ErrInvalidSOCKSVersion = errors.New("invalid socks version")
 	// ErrUnsupportedSOCKSCommand is returned for unsupported SOCKS commands.
@@ -51,7 +51,7 @@ var (
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
 type Client struct {
-	ln          link.Link
+	ln          transport.Transport
 	cipher      *crypto.Cipher
 	conn        *muxconn.Conn
 	session     *smux.Session
@@ -59,9 +59,7 @@ type Client struct {
 	controlStop context.CancelFunc
 	sessMu      sync.RWMutex
 	reconnectMu sync.Mutex
-	healthMu    sync.RWMutex
-	health      control.Status
-	onHealth    HealthFunc
+	health      *runtime.HealthTracker
 	deviceID    string
 	sessionID   string
 	claims      map[string]any
@@ -75,37 +73,21 @@ type HealthFunc func(control.Status)
 
 // Config holds runtime configuration for [Run] and [RunWithReady].
 type Config struct {
-	Link            string
-	Transport       string
-	Carrier         string
-	RoomURL         string
-	ChannelID       string
-	KeyHex          string
-	LocalAddr       string
-	DNSServer       string
-	SOCKSUser       string
-	SOCKSPass       string
-	VideoWidth      int
-	VideoHeight     int
-	VideoFPS        int
-	VideoBitrate    string
-	VideoHW         string
-	VideoQRSize     int
-	VideoQRRecovery string
-	VideoCodec      string
-	VideoTileModule int
-	VideoTileRS     int
-	VP8FPS          int
-	VP8BatchSize    int
-	SEIFPS          int
-	SEIBatchSize    int
-	SEIFragmentSize int
-	SEIAckTimeoutMS int
-	Engine          string
-	URL             string
-	Token           string
-	Liveness        control.Config
-	Traffic         transport.TrafficConfig
+	Transport        string
+	Carrier          string
+	RoomURL          string
+	ChannelID        string
+	KeyHex           string
+	LocalAddr        string
+	DNSServer        string
+	SOCKSUser        string
+	SOCKSPass        string
+	TransportOptions transport.Options
+	Engine           string
+	URL              string
+	Token            string
+	Liveness         control.Config
+	Traffic          transport.TrafficConfig
 
 	// DeviceID overrides the persistent client-side device identifier. Leave
 	// empty to derive one from DeviceIDPath (or generate a random one if both
@@ -151,7 +133,7 @@ func RunWithReady(ctx context.Context, cfg Config, onReady func()) error {
 		dnsServer: cfg.DNSServer,
 		socksUser: cfg.SOCKSUser,
 		socksPass: cfg.SOCKSPass,
-		onHealth:  cfg.OnHealth,
+		health:    runtime.NewHealthTracker(cfg.OnHealth),
 	}
 
 	// shutdown is registered BEFORE bringUpLink so we always close any
@@ -192,35 +174,19 @@ func (c *Client) bringUpLink(
 	cfg Config,
 	cancel context.CancelFunc,
 ) error {
-	ln, err := link.New(ctx, cfg.Link, link.Config{
-		Transport:       cfg.Transport,
-		Carrier:         cfg.Carrier,
-		RoomURL:         cfg.RoomURL,
-		Engine:          cfg.Engine,
-		URL:             cfg.URL,
-		Token:           cfg.Token,
-		ChannelID:       cfg.ChannelID,
-		DeviceID:        c.deviceID,
-		Name:            names.Generate(),
-		OnData:          c.onData,
-		DNSServer:       cfg.DNSServer,
-		VideoWidth:      cfg.VideoWidth,
-		VideoHeight:     cfg.VideoHeight,
-		VideoFPS:        cfg.VideoFPS,
-		VideoBitrate:    cfg.VideoBitrate,
-		VideoHW:         cfg.VideoHW,
-		VideoQRSize:     cfg.VideoQRSize,
-		VideoQRRecovery: cfg.VideoQRRecovery,
-		VideoCodec:      cfg.VideoCodec,
-		VideoTileModule: cfg.VideoTileModule,
-		VideoTileRS:     cfg.VideoTileRS,
-		VP8FPS:          cfg.VP8FPS,
-		VP8BatchSize:    cfg.VP8BatchSize,
-		SEIFPS:          cfg.SEIFPS,
-		SEIBatchSize:    cfg.SEIBatchSize,
-		SEIFragmentSize: cfg.SEIFragmentSize,
-		SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
-		Traffic:         cfg.Traffic,
+	ln, err := transport.New(ctx, cfg.Transport, transport.Config{
+		Carrier:   cfg.Carrier,
+		RoomURL:   cfg.RoomURL,
+		Engine:    cfg.Engine,
+		URL:       cfg.URL,
+		Token:     cfg.Token,
+		ChannelID: cfg.ChannelID,
+		DeviceID:  c.deviceID,
+		Name:      names.Generate(),
+		OnData:    c.onData,
+		DNSServer: cfg.DNSServer,
+		Options:   cfg.TransportOptions,
+		Traffic:   cfg.Traffic,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create link: %w", err)
@@ -336,31 +302,12 @@ func resolveDeviceID(deviceID, path string) (string, error) {
 	return id, nil
 }
 
-// smuxConfig returns the tuned smux config used on both ends.
-func smuxConfig(maxWirePayload ...int) *smux.Config {
-	cfg := smux.DefaultConfig()
-	cfg.Version = 2
-	cfg.KeepAliveDisabled = true
-	cfg.MaxFrameSize = 32768
-	if len(maxWirePayload) > 0 && maxWirePayload[0] > crypto.WireOverhead {
-		maxFrameSize := maxWirePayload[0] - crypto.WireOverhead
-		if maxFrameSize < cfg.MaxFrameSize {
-			cfg.MaxFrameSize = maxFrameSize
-		}
-	}
-	cfg.MaxReceiveBuffer = 16 * 1024 * 1024
-	cfg.MaxStreamBuffer = 1024 * 1024
-	cfg.KeepAliveInterval = 10 * time.Second
-	cfg.KeepAliveTimeout = 60 * time.Second
-	return cfg
+func smuxConfig(maxWirePayload int) *smux.Config {
+	return runtime.SmuxConfig(maxWirePayload)
 }
 
-func linkMaxPayload(ln link.Link) int {
-	provider, ok := ln.(link.FeaturesProvider)
-	if !ok {
-		return 0
-	}
-	return provider.Features().MaxPayloadSize
+func linkMaxPayload(tr transport.Transport) int {
+	return runtime.MaxPayload(tr)
 }
 
 func (c *Client) handleReconnect(ctx context.Context, cfg Config, cancel context.CancelFunc, reason string) bool {
@@ -518,61 +465,14 @@ func (c *Client) startControlLoop(
 
 // Status returns the latest client-side control health snapshot.
 func (c *Client) Status() control.Status {
-	c.healthMu.RLock()
-	defer c.healthMu.RUnlock()
-	return c.health
+	return c.health.Status()
 }
 
-func (c *Client) recordSession(sessionID string) {
-	c.healthMu.Lock()
-	c.health.SessionID = sessionID
-	c.health.MissedPongs = 0
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordPong(h control.Health) {
-	c.healthMu.Lock()
-	c.health.LastPong = h.LastSeen
-	c.health.LastRTT = h.RTT
-	c.health.MissedPongs = 0
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordMissed(missed int) {
-	c.healthMu.Lock()
-	c.health.MissedPongs = missed
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordUnhealthy(missed int) {
-	c.healthMu.Lock()
-	c.health.MissedPongs = missed
-	c.health.UnhealthyEvents++
-	c.health.LastUnhealthy = time.Now()
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordReconnect() {
-	c.healthMu.Lock()
-	c.health.Reconnects++
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) notifyHealth(status control.Status) {
-	if c.onHealth != nil {
-		c.onHealth(status)
-	}
-}
+func (c *Client) recordSession(sessionID string) { c.health.RecordSession(sessionID) }
+func (c *Client) recordPong(h control.Health)    { c.health.RecordPong(h) }
+func (c *Client) recordMissed(missed int)        { c.health.RecordMissed(missed) }
+func (c *Client) recordUnhealthy(missed int)     { c.health.RecordUnhealthy(missed) }
+func (c *Client) recordReconnect()               { c.health.RecordReconnect() }
 
 func (c *Client) shutdown() {
 	c.sessMu.Lock()
@@ -604,17 +504,9 @@ func (c *Client) shutdown() {
 }
 
 func setupCipher(keyHex string) (*crypto.Cipher, error) {
-	key, err := hex.DecodeString(keyHex)
+	cipher, err := runtime.SetupCipher(keyHex)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode key: %w", err)
-	}
-	if len(key) != 32 {
-		return nil, fmt.Errorf("%w: got %d", ErrKeySize, len(key))
-	}
-
-	cipher, err := crypto.NewCipher(string(key))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
+		return nil, fmt.Errorf("client: %w", err)
 	}
 	return cipher, nil
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	cryptopkg "github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
 var errMuxBoom = errors.New("boom")
@@ -22,12 +23,13 @@ type stubLink struct {
 	canSendFn func() bool
 }
 
-func (s *stubLink) Connect(context.Context) error   { return nil }
-func (s *stubLink) Close() error                    { return nil }
-func (s *stubLink) SetReconnectCallback(func())     {}
-func (s *stubLink) SetShouldReconnect(func() bool)  {}
-func (s *stubLink) SetEndedCallback(func(string))   {}
-func (s *stubLink) WatchConnection(context.Context) {}
+func (s *stubLink) Connect(context.Context) error    { return nil }
+func (s *stubLink) Close() error                     { return nil }
+func (s *stubLink) SetReconnectCallback(func())      {}
+func (s *stubLink) SetShouldReconnect(func() bool)   {}
+func (s *stubLink) SetEndedCallback(func(string))    {}
+func (s *stubLink) WatchConnection(context.Context)  {}
+func (s *stubLink) Features() transport.Features     { return transport.Features{} }
 func (s *stubLink) Send(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

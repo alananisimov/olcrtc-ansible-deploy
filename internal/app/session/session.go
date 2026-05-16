@@ -11,13 +11,10 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
-	"github.com/openlibrecommunity/olcrtc/internal/carrier"
-	"github.com/openlibrecommunity/olcrtc/internal/carrier/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
-	"github.com/openlibrecommunity/olcrtc/internal/link/direct"
+	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
@@ -72,13 +69,9 @@ var (
 	ErrURLRequired = errors.New("SFU URL required (set auth.url)")
 	// ErrUnsupportedCarrier indicates that carrier is not registered.
 	ErrUnsupportedCarrier = errors.New("unsupported carrier")
-	// ErrUnsupportedLink indicates that link is not registered.
-	ErrUnsupportedLink = errors.New("unsupported link")
 	// ErrUnsupportedTransport indicates that transport is not registered.
 	ErrUnsupportedTransport = errors.New("unsupported transport")
 
-	// ErrLinkRequired indicates that link is not provided.
-	ErrLinkRequired = errors.New("link required (set link to direct)")
 	// ErrTransportRequired indicates that transport is not provided.
 	ErrTransportRequired = errors.New(
 		"transport required (set transport to datachannel, videochannel, seichannel or vp8channel)")
@@ -151,10 +144,37 @@ var (
 	errNonNegativeDuration = errors.New("duration must be >= 0")
 )
 
+// VideoConfig holds tunables for the videochannel transport.
+type VideoConfig struct {
+	Width      int
+	Height     int
+	FPS        int
+	Bitrate    string
+	HW         string
+	QRSize     int
+	QRRecovery string
+	Codec      string
+	TileModule int
+	TileRS     int
+}
+
+// VP8Config holds tunables for the vp8channel transport.
+type VP8Config struct {
+	FPS       int
+	BatchSize int
+}
+
+// SEIConfig holds tunables for the seichannel transport.
+type SEIConfig struct {
+	FPS          int
+	BatchSize    int
+	FragmentSize int
+	AckTimeoutMS int
+}
+
 // Config holds runtime session settings.
 type Config struct {
 	Mode                  string
-	Link                  string
 	Transport             string
 	Auth                  string
 	Engine                string
@@ -170,22 +190,9 @@ type Config struct {
 	DNSServer             string
 	SOCKSProxyAddr        string
 	SOCKSProxyPort        int
-	VideoWidth            int
-	VideoHeight           int
-	VideoFPS              int
-	VideoBitrate          string
-	VideoHW               string
-	VideoQRSize           int
-	VideoQRRecovery       string
-	VideoCodec            string
-	VideoTileModule       int
-	VideoTileRS           int
-	VP8FPS                int
-	VP8BatchSize          int
-	SEIFPS                int
-	SEIBatchSize          int
-	SEIFragmentSize       int
-	SEIAckTimeoutMS       int
+	Video                 VideoConfig
+	VP8                   VP8Config
+	SEI                   SEIConfig
 	LivenessInterval      string
 	LivenessTimeout       string
 	LivenessFailures      int
@@ -198,8 +205,7 @@ type Config struct {
 
 // RegisterDefaults registers built-in carriers and transports.
 func RegisterDefaults() {
-	builtin.Register()
-	link.Register("direct", direct.New)
+	enginebuiltin.RegisterDefaults()
 	transport.Register("datachannel", datachannel.New)
 	transport.Register("videochannel", videochannel.New)
 	transport.Register("seichannel", seichannel.New)
@@ -264,56 +270,56 @@ func ApplyLivenessDefaults(cfg Config) Config {
 }
 
 func applyVideoDefaults(cfg Config) Config {
-	if cfg.VideoCodec == "" {
-		cfg.VideoCodec = videoCodecQRCode
+	if cfg.Video.Codec == "" {
+		cfg.Video.Codec = videoCodecQRCode
 	}
 	width := defaultVideoWidth
-	if cfg.VideoCodec == videoCodecTile {
+	if cfg.Video.Codec == videoCodecTile {
 		width = defaultVideoHeight
 	}
-	if cfg.VideoWidth == 0 {
-		cfg.VideoWidth = width
+	if cfg.Video.Width == 0 {
+		cfg.Video.Width = width
 	}
-	if cfg.VideoHeight == 0 {
-		cfg.VideoHeight = defaultVideoHeight
+	if cfg.Video.Height == 0 {
+		cfg.Video.Height = defaultVideoHeight
 	}
-	if cfg.VideoFPS == 0 {
-		cfg.VideoFPS = defaultVideoFPS
+	if cfg.Video.FPS == 0 {
+		cfg.Video.FPS = defaultVideoFPS
 	}
-	if cfg.VideoBitrate == "" {
-		cfg.VideoBitrate = defaultVideoBitrate
+	if cfg.Video.Bitrate == "" {
+		cfg.Video.Bitrate = defaultVideoBitrate
 	}
-	if cfg.VideoHW == "" {
-		cfg.VideoHW = defaultVideoHW
+	if cfg.Video.HW == "" {
+		cfg.Video.HW = defaultVideoHW
 	}
-	if cfg.VideoQRRecovery == "" {
-		cfg.VideoQRRecovery = defaultVideoQRRecovery
+	if cfg.Video.QRRecovery == "" {
+		cfg.Video.QRRecovery = defaultVideoQRRecovery
 	}
 	return cfg
 }
 
 func applyVP8Defaults(cfg Config) Config {
-	if cfg.VP8FPS == 0 {
-		cfg.VP8FPS = defaultVP8FPS
+	if cfg.VP8.FPS == 0 {
+		cfg.VP8.FPS = defaultVP8FPS
 	}
-	if cfg.VP8BatchSize == 0 {
-		cfg.VP8BatchSize = defaultVP8BatchSize
+	if cfg.VP8.BatchSize == 0 {
+		cfg.VP8.BatchSize = defaultVP8BatchSize
 	}
 	return cfg
 }
 
 func applySEIDefaults(cfg Config) Config {
-	if cfg.SEIFPS == 0 {
-		cfg.SEIFPS = defaultSEIFPS
+	if cfg.SEI.FPS == 0 {
+		cfg.SEI.FPS = defaultSEIFPS
 	}
-	if cfg.SEIBatchSize == 0 {
-		cfg.SEIBatchSize = defaultSEIBatchSize
+	if cfg.SEI.BatchSize == 0 {
+		cfg.SEI.BatchSize = defaultSEIBatchSize
 	}
-	if cfg.SEIFragmentSize == 0 {
-		cfg.SEIFragmentSize = defaultSEIFragmentSize
+	if cfg.SEI.FragmentSize == 0 {
+		cfg.SEI.FragmentSize = defaultSEIFragmentSize
 	}
-	if cfg.SEIAckTimeoutMS == 0 {
-		cfg.SEIAckTimeoutMS = defaultSEIAckTimeoutMS
+	if cfg.SEI.AckTimeoutMS == 0 {
+		cfg.SEI.AckTimeoutMS = defaultSEIAckTimeoutMS
 	}
 	return cfg
 }
@@ -324,9 +330,6 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if err := validateAuth(cfg); err != nil {
-		return err
-	}
-	if err := validateLink(cfg); err != nil {
 		return err
 	}
 	if err := validateTransportRegistration(cfg); err != nil {
@@ -363,18 +366,8 @@ func validateAuth(cfg Config) error {
 	if cfg.Auth == "" {
 		return ErrAuthRequired
 	}
-	if !slices.Contains(carrier.Available(), cfg.Auth) {
-		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, carrier.Available())
-	}
-	return nil
-}
-
-func validateLink(cfg Config) error {
-	if cfg.Link == "" {
-		return ErrLinkRequired
-	}
-	if !slices.Contains(link.Available(), cfg.Link) {
-		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedLink, cfg.Link, link.Available())
+	if !slices.Contains(enginebuiltin.Available(), cfg.Auth) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, enginebuiltin.Available())
 	}
 	return nil
 }
@@ -416,55 +409,55 @@ func validateTransportConfig(cfg Config) error {
 }
 
 func validateVideoCodec(cfg Config) error {
-	if cfg.VideoCodec != "" && cfg.VideoCodec != videoCodecQRCode && cfg.VideoCodec != videoCodecTile {
+	if cfg.Video.Codec != "" && cfg.Video.Codec != videoCodecQRCode && cfg.Video.Codec != videoCodecTile {
 		return ErrVideoCodecInvalid
 	}
-	if cfg.VideoCodec == videoCodecTile && (cfg.VideoWidth != 1080 || cfg.VideoHeight != 1080) {
+	if cfg.Video.Codec == videoCodecTile && (cfg.Video.Width != 1080 || cfg.Video.Height != 1080) {
 		return ErrTileCodecDimensions
 	}
 	return nil
 }
 
 func validateVideoChannel(cfg Config) error {
-	if cfg.VideoWidth == 0 {
+	if cfg.Video.Width == 0 {
 		return ErrVideoWidthRequired
 	}
-	if cfg.VideoHeight == 0 {
+	if cfg.Video.Height == 0 {
 		return ErrVideoHeightRequired
 	}
-	if cfg.VideoFPS == 0 {
+	if cfg.Video.FPS == 0 {
 		return ErrVideoFPSRequired
 	}
-	if cfg.VideoBitrate == "" {
+	if cfg.Video.Bitrate == "" {
 		return ErrVideoBitrateRequired
 	}
-	if cfg.VideoHW == "" {
+	if cfg.Video.HW == "" {
 		return ErrVideoHWRequired
 	}
 	return validateVideoCodec(cfg)
 }
 
 func validateVP8Channel(cfg Config) error {
-	if cfg.VP8FPS == 0 {
+	if cfg.VP8.FPS == 0 {
 		return ErrVP8FPSRequired
 	}
-	if cfg.VP8BatchSize == 0 {
+	if cfg.VP8.BatchSize == 0 {
 		return ErrVP8BatchSizeRequired
 	}
 	return nil
 }
 
 func validateSEIChannel(cfg Config) error {
-	if cfg.SEIFPS == 0 {
+	if cfg.SEI.FPS == 0 {
 		return ErrSEIFPSRequired
 	}
-	if cfg.SEIBatchSize == 0 {
+	if cfg.SEI.BatchSize == 0 {
 		return ErrSEIBatchSizeRequired
 	}
-	if cfg.SEIFragmentSize == 0 {
+	if cfg.SEI.FragmentSize == 0 {
 		return ErrSEIFragmentSizeRequired
 	}
-	if cfg.SEIAckTimeoutMS == 0 {
+	if cfg.SEI.AckTimeoutMS == 0 {
 		return ErrSEIAckTimeoutRequired
 	}
 	return nil
@@ -637,39 +630,24 @@ func runOnce(
 	liveness control.Config,
 	traffic transport.TrafficConfig,
 ) error {
+	opts := buildTransportOptions(cfg)
 	switch cfg.Mode {
 	case modeSRV:
 		if err := server.Run(ctx, server.Config{
-			Link:            cfg.Link,
-			Transport:       cfg.Transport,
-			Carrier:         cfg.Auth,
-			RoomURL:         roomURL,
-			ChannelID:       cfg.ChannelID,
-			KeyHex:          cfg.KeyHex,
-			DNSServer:       cfg.DNSServer,
-			SOCKSProxyAddr:  cfg.SOCKSProxyAddr,
-			SOCKSProxyPort:  cfg.SOCKSProxyPort,
-			VideoWidth:      cfg.VideoWidth,
-			VideoHeight:     cfg.VideoHeight,
-			VideoFPS:        cfg.VideoFPS,
-			VideoBitrate:    cfg.VideoBitrate,
-			VideoHW:         cfg.VideoHW,
-			VideoQRSize:     cfg.VideoQRSize,
-			VideoQRRecovery: cfg.VideoQRRecovery,
-			VideoCodec:      cfg.VideoCodec,
-			VideoTileModule: cfg.VideoTileModule,
-			VideoTileRS:     cfg.VideoTileRS,
-			VP8FPS:          cfg.VP8FPS,
-			VP8BatchSize:    cfg.VP8BatchSize,
-			SEIFPS:          cfg.SEIFPS,
-			SEIBatchSize:    cfg.SEIBatchSize,
-			SEIFragmentSize: cfg.SEIFragmentSize,
-			SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
-			Engine:          cfg.Engine,
-			URL:             cfg.URL,
-			Token:           cfg.Token,
-			Liveness:        liveness,
-			Traffic:         traffic,
+			Transport:        cfg.Transport,
+			Carrier:          cfg.Auth,
+			RoomURL:          roomURL,
+			ChannelID:        cfg.ChannelID,
+			KeyHex:           cfg.KeyHex,
+			DNSServer:        cfg.DNSServer,
+			SOCKSProxyAddr:   cfg.SOCKSProxyAddr,
+			SOCKSProxyPort:   cfg.SOCKSProxyPort,
+			TransportOptions: opts,
+			Engine:           cfg.Engine,
+			URL:              cfg.URL,
+			Token:            cfg.Token,
+			Liveness:         liveness,
+			Traffic:          traffic,
 			OnSessionOpen: func(sessionID, deviceID string, claims map[string]any) {
 				logger.Infof("session opened: id=%s device=%s claims=%v", sessionID, deviceID, claims)
 			},
@@ -685,37 +663,21 @@ func runOnce(
 		return nil
 	case modeCNC:
 		if err := client.Run(ctx, client.Config{
-			Link:            cfg.Link,
-			Transport:       cfg.Transport,
-			Carrier:         cfg.Auth,
-			RoomURL:         roomURL,
-			ChannelID:       cfg.ChannelID,
-			KeyHex:          cfg.KeyHex,
-			LocalAddr:       fmt.Sprintf("%s:%d", cfg.SOCKSHost, cfg.SOCKSPort),
-			DNSServer:       cfg.DNSServer,
-			SOCKSUser:       cfg.SOCKSUser,
-			SOCKSPass:       cfg.SOCKSPass,
-			VideoWidth:      cfg.VideoWidth,
-			VideoHeight:     cfg.VideoHeight,
-			VideoFPS:        cfg.VideoFPS,
-			VideoBitrate:    cfg.VideoBitrate,
-			VideoHW:         cfg.VideoHW,
-			VideoQRSize:     cfg.VideoQRSize,
-			VideoQRRecovery: cfg.VideoQRRecovery,
-			VideoCodec:      cfg.VideoCodec,
-			VideoTileModule: cfg.VideoTileModule,
-			VideoTileRS:     cfg.VideoTileRS,
-			VP8FPS:          cfg.VP8FPS,
-			VP8BatchSize:    cfg.VP8BatchSize,
-			SEIFPS:          cfg.SEIFPS,
-			SEIBatchSize:    cfg.SEIBatchSize,
-			SEIFragmentSize: cfg.SEIFragmentSize,
-			SEIAckTimeoutMS: cfg.SEIAckTimeoutMS,
-			Engine:          cfg.Engine,
-			URL:             cfg.URL,
-			Token:           cfg.Token,
-			Liveness:        liveness,
-			Traffic:         traffic,
+			Transport:        cfg.Transport,
+			Carrier:          cfg.Auth,
+			RoomURL:          roomURL,
+			ChannelID:        cfg.ChannelID,
+			KeyHex:           cfg.KeyHex,
+			LocalAddr:        fmt.Sprintf("%s:%d", cfg.SOCKSHost, cfg.SOCKSPort),
+			DNSServer:        cfg.DNSServer,
+			SOCKSUser:        cfg.SOCKSUser,
+			SOCKSPass:        cfg.SOCKSPass,
+			TransportOptions: opts,
+			Engine:           cfg.Engine,
+			URL:              cfg.URL,
+			Token:            cfg.Token,
+			Liveness:         liveness,
+			Traffic:          traffic,
 		}); err != nil {
 			return fmt.Errorf("client: %w", err)
 		}
@@ -776,8 +738,8 @@ func ValidateGen(cfg Config) error {
 	if cfg.Auth == "" {
 		return ErrAuthRequired
 	}
-	if !slices.Contains(carrier.Available(), cfg.Auth) {
-		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, carrier.Available())
+	if !slices.Contains(enginebuiltin.Available(), cfg.Auth) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, enginebuiltin.Available())
 	}
 	if cfg.DNSServer == "" {
 		return ErrDNSServerRequired

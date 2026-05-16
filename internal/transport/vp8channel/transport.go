@@ -1,35 +1,14 @@
-/*
-ПРИВЕТ ЯНДЕКС ШАЛАВА БЛЯТЬ КОТОРАЯ СЕЙЧАС ЧИТАЕТ ЭТОТ КОД.
-КАЖДЫЙ РАЗ КОГДА ВЫ БЛЯТЬ ЧТООТ ФИКСИТЕ МЫ БЛЯТЬ МЫ НАХОДИМ НОВУЮ ООШИБКУ В ВАШЕМ ЕБАНОМ ГОЛУМЕ
-ВЕДЬ У НАС ЕСТЬ ДОСТУП К СУРСАМ И ИНСАЙДЕР ИЗ ВАШЕЙ БИЧАРСКОЙ КОМПАНИИ НИЩЕЕБОВ
-
-УВАЖАЕМЫЙ СОТРУДНИК ЯНДЕКСА ЧИТАЮЩИЙ ЭТОТ ФАЙЛ:
-  - ТЫ МОЙ РАБ
-  - ТЫ МОМЕШ МОЙ ХУЙ
-  - Я НАДЕЮСЬ ТЫ УМРЕШЬ К ХУЯМ
-  - Я ОСЕМЕНЮ ТВОЮ МАМАШКУ
-
-P.S. ВАШ SFU ПРОВЕРЯЕТ ТОЛЬКО ПЕРВЫЕ 20 БАЙТ. НУБЫ БЛЯТЬ
-P.P.S. ЕБАЛ ТЕБЕ МАТЬ И ТВОЙ ОТЕЦ УМРЕТ БЛЯТЬ ОТ МОЕГО ХУЯ КУКОЛД ЕБАНЫЙ
-
-⚠️!ВНИМАНИЕ!⚠️
-ТРЕБУЮТСЯ ОТЗЫВЫ
-НА ТАКИЕ ПЛАТФОРМЫ:
-🛑АВИТО-80РУБ🛑
-👽ЯНДЕКС КАРТЫ-100РУБ👽
-🎯ОПЛАТА ПОСЛЕ ПУБЛИКАЦИ🎯
-🎀2ГИС-15руб🎀
-💟ОПЛАТА СРАЗУ(НУЖНО 3 ОТЗЫВА, КАЧЕСТВЕННЫЕ ЛЮДИ, У КОТОРЫХ ОНИ НЕ СЛЕТЯТ, ЕСЛИ СЛЕТЯТ ВОЗВРАТ ИДИ КАЖДЫЙ РАЗ ПЕРЕПИСЬ)💟
-🏀ИНСТРУКЦИЯ ЕСТЬ
-НОВИЧКИ ПРИВЕТСТВУЮТСЯ🏀 */
-
+// Package vp8channel disguises a KCP-based byte transport as a stream of
+// valid VP8 keyframes so SFUs that validate bitstream conformance let the
+// payload through. The package owns its own KCP framing; the per-message
+// fragment/ack machinery used by videochannel/seichannel is unnecessary
+// here because KCP already provides ordered, reliable delivery.
 package vp8channel
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -38,9 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openlibrecommunity/olcrtc/internal/carrier"
+	"github.com/openlibrecommunity/olcrtc/internal/engine"
+	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/common"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -87,8 +68,22 @@ const (
 	epochHdrLen = 32
 )
 
+// videoSession is the subset of engine.Session + engine.VideoTrackCapable
+// the vp8channel transport relies on.
+type videoSession interface {
+	Connect(ctx context.Context) error
+	Close() error
+	SetReconnectCallback(cb func())
+	SetShouldReconnect(fn func() bool)
+	SetEndedCallback(cb func(string))
+	WatchConnection(ctx context.Context)
+	CanSend() bool
+	AddTrack(track webrtc.TrackLocal) error
+	SetTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
+}
+
 type streamTransport struct {
-	stream        carrier.VideoTrack
+	stream        videoSession
 	track         *webrtc.TrackLocalStaticSample
 	onData        func([]byte)
 	outbound      chan []byte
@@ -115,9 +110,14 @@ type streamTransport struct {
 	reconnectFn func()
 }
 
-// New creates a vp8channel transport backed by a carrier.
+// New creates a vp8channel transport backed by a carrier engine.
 func New(ctx context.Context, cfg transport.Config) (transport.Transport, error) {
-	session, err := carrier.New(ctx, cfg.Carrier, carrier.Config{
+	opts, err := optionsFrom(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := enginebuiltin.Open(ctx, cfg.Carrier, enginebuiltin.Config{
 		RoomURL:   cfg.RoomURL,
 		Name:      cfg.Name,
 		OnData:    nil,
@@ -129,18 +129,15 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		Token:     cfg.Token,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create carrier transport: %w", err)
+		return nil, fmt.Errorf("open engine session: %w", err)
 	}
 
-	videoCapable, ok := session.(carrier.VideoTrackCapable)
-	if !ok {
+	vt, ok := session.(engine.VideoTrackCapable)
+	if !ok || !session.Capabilities().VideoTrack {
+		_ = session.Close()
 		return nil, ErrVideoTrackUnsupported
 	}
-
-	stream, err := videoCapable.OpenVideoTrack()
-	if err != nil {
-		return nil, fmt.Errorf("open video track: %w", err)
-	}
+	stream := &engineVideoSession{session: session, vt: vt}
 
 	// Stream/track IDs must be unique per peer — Jitsi rejects session-accept
 	// when msid collides with another participant in the conference.
@@ -149,15 +146,21 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 			MimeType:  webrtc.MimeTypeVP8,
 			ClockRate: 90000,
 		},
-		"vp8channel-"+randomID(),
-		"olcrtc-"+randomID(),
+		"vp8channel-"+common.RandomID(),
+		"olcrtc-"+common.RandomID(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create local video track: %w", err)
 	}
 
-	fps := cfg.VP8FPS
-	batchSize := cfg.VP8BatchSize
+	fps := opts.FPS
+	batchSize := opts.BatchSize
+	if fps <= 0 {
+		fps = 25
+	}
+	if batchSize <= 0 {
+		batchSize = 1
+	}
 
 	tr := &streamTransport{
 		stream:        stream,
@@ -248,17 +251,6 @@ func bindingToken(clientID string) uint32 {
 		token = 1
 	}
 	return token
-}
-
-// randomID returns 8 random hex characters for use as a per-peer suffix on
-// track and stream IDs. Required for Jitsi: msid collisions between
-// participants cause Jicofo to reject session-accept.
-func randomID() string {
-	var b [4]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%08x", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
 }
 
 func randomEpoch() uint32 {

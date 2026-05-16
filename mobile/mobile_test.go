@@ -13,6 +13,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/vp8channel"
 )
 
 type testProtector struct {
@@ -77,12 +78,10 @@ func TestProtectorAndLogging(t *testing.T) {
 	}
 }
 
-//nolint:cyclop // compact setter smoke test verifies several related defaults together
 func TestDefaultsAndSetters(t *testing.T) {
 	resetMobileGlobals(t)
 
 	SetTransport("dc")
-	SetLink("direct")
 	SetDNS("9.9.9.9:53")
 	SetVP8Options(-1, 999)
 	SetLivenessOptions(2500, 750, -1)
@@ -90,7 +89,7 @@ func TestDefaultsAndSetters(t *testing.T) {
 	mu.Lock()
 	got := defaults
 	mu.Unlock()
-	if got.transport != dataTransport || got.link != defaultLink || got.dnsServer != "9.9.9.9:53" ||
+	if got.transport != dataTransport || got.dnsServer != "9.9.9.9:53" ||
 		got.vp8FPS != 1 || got.vp8BatchSize != 64 ||
 		got.livenessInterval != 2500*time.Millisecond || got.livenessTimeout != 750*time.Millisecond ||
 		got.livenessFailures != control.DefaultFailures {
@@ -176,17 +175,18 @@ func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 	SetLivenessOptions(2500, 750, 4)
 
 	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
-		if cfg.Link != defaultLink || cfg.Transport != dataTransport || cfg.Carrier != carrierJazz ||
+		opts, _ := cfg.TransportOptions.(vp8channel.Options)
+		if cfg.Transport != dataTransport || cfg.Carrier != carrierJazz ||
 			cfg.RoomURL != "any" || cfg.DeviceID != "client" || cfg.LocalAddr != "127.0.0.1:1080" ||
-			cfg.DNSServer != defaultDNSServer || cfg.VP8FPS != 60 || cfg.VP8BatchSize != 8 ||
+			cfg.DNSServer != defaultDNSServer || opts.FPS != 60 || opts.BatchSize != 8 ||
 			cfg.Liveness.Interval != 2500*time.Millisecond ||
 			cfg.Liveness.Timeout != 750*time.Millisecond ||
 			cfg.Liveness.Failures != 4 {
 			t.Fatalf(
-				"RunWithReady args mismatch: link=%q transport=%q carrier=%q room=%q client=%q "+
+				"RunWithReady args mismatch: transport=%q carrier=%q room=%q client=%q "+
 					"local=%q dns=%q vp8=%d/%d liveness=%+v",
-				cfg.Link, cfg.Transport, cfg.Carrier, cfg.RoomURL, cfg.DeviceID,
-				cfg.LocalAddr, cfg.DNSServer, cfg.VP8FPS, cfg.VP8BatchSize, cfg.Liveness,
+				cfg.Transport, cfg.Carrier, cfg.RoomURL, cfg.DeviceID,
+				cfg.LocalAddr, cfg.DNSServer, opts.FPS, opts.BatchSize, cfg.Liveness,
 			)
 		}
 		onReady()
@@ -240,12 +240,13 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 
 	SetLivenessOptions(3000, 1000, 5)
 	runClientWithReady = func(ctx context.Context, cfg client.Config, onReady func()) error {
-		if cfg.Transport != dataTransport || cfg.VP8FPS != 1 || cfg.VP8BatchSize != 64 ||
+		opts, _ := cfg.TransportOptions.(vp8channel.Options)
+		if cfg.Transport != dataTransport || opts.FPS != 1 || opts.BatchSize != 64 ||
 			cfg.Liveness.Interval != 3000*time.Millisecond ||
 			cfg.Liveness.Timeout != time.Second ||
 			cfg.Liveness.Failures != 5 {
 			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d liveness=%+v",
-				cfg.Transport, cfg.VP8FPS, cfg.VP8BatchSize, cfg.Liveness)
+				cfg.Transport, opts.FPS, opts.BatchSize, cfg.Liveness)
 		}
 		onReady()
 		<-ctx.Done()
