@@ -13,7 +13,6 @@ var errNo = errors.New("no")
 func TestRun_FailsWithoutKey(t *testing.T) {
 	tunnel.RegisterDefaults()
 	err := tunnel.New(tunnel.Config{
-		Link:      "direct",
 		Transport: "datachannel",
 		Carrier:   "telemost",
 		RoomURL:   "room-1",

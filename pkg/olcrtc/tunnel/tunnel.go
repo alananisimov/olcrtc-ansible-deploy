@@ -5,7 +5,6 @@
 // authorization and observability via the [Config] hooks:
 //
 //	srv := tunnel.New(tunnel.Config{
-//	    Link:      "direct",
 //	    Transport: "datachannel",
 //	    Carrier:   "jitsi",
 //	    RoomURL:   "https://meet.cryptopro.ru/myroom",
@@ -72,7 +71,6 @@ type TrafficFunc = server.TrafficFunc
 // Config holds runtime server configuration.
 type Config struct {
 	// --- carrier selection ---
-	Link      string // currently only "direct"
 	Transport string // datachannel, videochannel, seichannel, vp8channel
 	Carrier   string // jitsi, telemost, jazz, wbstream, none
 	RoomURL   string // conference room identifier for the carrier
@@ -120,7 +118,6 @@ func New(cfg Config) *Server {
 // Run starts the server and blocks until ctx is cancelled or the carrier ends.
 func (s *Server) Run(ctx context.Context) error {
 	if err := server.Run(ctx, server.Config{
-		Link:             s.cfg.Link,
 		Transport:        s.cfg.Transport,
 		Carrier:          s.cfg.Carrier,
 		RoomURL:          s.cfg.RoomURL,

@@ -87,7 +87,6 @@ func requireAppliedConfig(t *testing.T, got session.Config) {
 	t.Helper()
 	want := session.Config{
 		Mode:                  testModeSrv,
-		Link:                  "direct",
 		Auth:                  testAuthProvider,
 		RoomID:                testRoomID,
 		KeyHex:                testCryptoKey,

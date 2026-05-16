@@ -17,7 +17,6 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/handshake"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
@@ -56,7 +55,7 @@ type HealthFunc func(control.Status)
 
 // Server handles incoming tunnel connections and proxies their traffic.
 type Server struct {
-	ln             link.Link
+	ln             transport.Transport
 	cipher         *crypto.Cipher
 	conn           *muxconn.Conn
 	session        *smux.Session
@@ -89,7 +88,6 @@ type ConnectRequest struct {
 
 // Config holds runtime configuration for [Run].
 type Config struct {
-	Link             string
 	Transport        string
 	Carrier          string
 	RoomURL          string
@@ -240,12 +238,8 @@ func smuxConfig(maxWirePayload ...int) *smux.Config {
 	return cfg
 }
 
-func linkMaxPayload(ln link.Link) int {
-	provider, ok := ln.(link.FeaturesProvider)
-	if !ok {
-		return 0
-	}
-	return provider.Features().MaxPayloadSize
+func linkMaxPayload(tr transport.Transport) int {
+	return tr.Features().MaxPayloadSize
 }
 
 func (s *Server) bringUpLink(
@@ -253,25 +247,24 @@ func (s *Server) bringUpLink(
 	cfg Config,
 	cancel context.CancelFunc,
 ) error {
-	ln, err := link.New(ctx, cfg.Link, link.Config{
-		Transport:        cfg.Transport,
-		Carrier:          cfg.Carrier,
-		RoomURL:          cfg.RoomURL,
-		Engine:           cfg.Engine,
-		URL:              cfg.URL,
-		Token:            cfg.Token,
-		ChannelID:        cfg.ChannelID,
-		DeviceID:         "",
-		Name:             names.Generate(),
-		OnData:           s.onData,
-		DNSServer:        s.dnsServer,
-		ProxyAddr:        s.socksProxyAddr,
-		ProxyPort:        s.socksProxyPort,
-		TransportOptions: cfg.TransportOptions,
-		Traffic:          cfg.Traffic,
+	ln, err := transport.New(ctx, cfg.Transport, transport.Config{
+		Carrier:   cfg.Carrier,
+		RoomURL:   cfg.RoomURL,
+		Engine:    cfg.Engine,
+		URL:       cfg.URL,
+		Token:     cfg.Token,
+		ChannelID: cfg.ChannelID,
+		DeviceID:  "",
+		Name:      names.Generate(),
+		OnData:    s.onData,
+		DNSServer: s.dnsServer,
+		ProxyAddr: s.socksProxyAddr,
+		ProxyPort: s.socksProxyPort,
+		Options:   cfg.TransportOptions,
+		Traffic:   cfg.Traffic,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create link: %w", err)
+		return fmt.Errorf("failed to create transport: %w", err)
 	}
 	s.ln = ln
 
@@ -287,7 +280,7 @@ func (s *Server) bringUpLink(
 		s.handleReconnect()
 	})
 
-	logger.Infof("Connecting link via %s/%s/%s...", cfg.Link, cfg.Transport, cfg.Carrier)
+	logger.Infof("Connecting transport=%s carrier=%s ...", cfg.Transport, cfg.Carrier)
 	if err := ln.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect link: %w", err)
 	}

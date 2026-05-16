@@ -86,7 +86,6 @@ func TestRunWithConfigValidationAndDataDirErrors(t *testing.T) {
 	session.RegisterDefaults()
 	scfg := session.Config{
 		Mode:      "srv",
-		Link:      "direct",
 		Transport: "datachannel",
 		Auth:      "jazz",
 		KeyHex:    "key",

@@ -31,7 +31,6 @@ var (
 // File is the on-disk YAML schema.
 type File struct {
 	Mode      string    `yaml:"mode"`
-	Link      string    `yaml:"link"`
 	Auth      Auth      `yaml:"auth"`
 	Room      Room      `yaml:"room"`
 	Crypto    Crypto    `yaml:"crypto"`
@@ -55,7 +54,6 @@ type File struct {
 // Profile is a failover entry that overrides top-level runtime fields.
 type Profile struct {
 	Name      string    `yaml:"name"`
-	Link      string    `yaml:"link"`
 	Auth      Auth      `yaml:"auth"`
 	Room      Room      `yaml:"room"`
 	Crypto    Crypto    `yaml:"crypto"`
@@ -243,7 +241,6 @@ func readKeyFile(configPath, keyFile string) (string, error) {
 // YAML values fill in the rest.
 func Apply(dst session.Config, f File) session.Config {
 	dst.Mode = pickString(dst.Mode, f.Mode)
-	dst.Link = pickString(dst.Link, f.Link)
 	dst.Transport = pickString(dst.Transport, f.Net.Transport)
 	dst.Auth = pickString(dst.Auth, f.Auth.Provider)
 	dst.Engine = pickString(dst.Engine, f.Engine.Name)
@@ -289,7 +286,6 @@ func Apply(dst session.Config, f File) session.Config {
 // ApplyProfile overlays a failover profile onto an already-applied base config.
 func ApplyProfile(base session.Config, p Profile) session.Config {
 	dst := base
-	dst.Link = overlayString(dst.Link, p.Link)
 	dst.Transport = overlayString(dst.Transport, p.Net.Transport)
 	dst.Auth = overlayString(dst.Auth, p.Auth.Provider)
 	dst.Engine = overlayString(dst.Engine, p.Engine.Name)

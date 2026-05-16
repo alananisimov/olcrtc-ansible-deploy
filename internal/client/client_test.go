@@ -14,6 +14,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	cryptopkg "github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
+	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/xtaci/smux"
 )
 
@@ -493,14 +494,15 @@ type closerLinkStub struct {
 	closed bool
 }
 
-func (s *closerLinkStub) Connect(context.Context) error   { return nil }
-func (s *closerLinkStub) Send([]byte) error               { return nil }
-func (s *closerLinkStub) Close() error                    { s.closed = true; return nil }
-func (s *closerLinkStub) SetReconnectCallback(func())     {}
-func (s *closerLinkStub) SetShouldReconnect(func() bool)  {}
-func (s *closerLinkStub) SetEndedCallback(func(string))   {}
-func (s *closerLinkStub) WatchConnection(context.Context) {}
-func (s *closerLinkStub) CanSend() bool                   { return true }
+func (s *closerLinkStub) Connect(context.Context) error    { return nil }
+func (s *closerLinkStub) Send([]byte) error                { return nil }
+func (s *closerLinkStub) Close() error                     { s.closed = true; return nil }
+func (s *closerLinkStub) SetReconnectCallback(func())      {}
+func (s *closerLinkStub) SetShouldReconnect(func() bool)   {}
+func (s *closerLinkStub) SetEndedCallback(func(string))    {}
+func (s *closerLinkStub) WatchConnection(context.Context)  {}
+func (s *closerLinkStub) CanSend() bool                    { return true }
+func (s *closerLinkStub) Features() transport.Features     { return transport.Features{} }
 
 func TestOnDataWithNilConn(_ *testing.T) {
 	c := &Client{}

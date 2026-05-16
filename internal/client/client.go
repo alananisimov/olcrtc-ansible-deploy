@@ -20,7 +20,6 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/handshake"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
@@ -51,7 +50,7 @@ var (
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
 type Client struct {
-	ln          link.Link
+	ln          transport.Transport
 	cipher      *crypto.Cipher
 	conn        *muxconn.Conn
 	session     *smux.Session
@@ -75,7 +74,6 @@ type HealthFunc func(control.Status)
 
 // Config holds runtime configuration for [Run] and [RunWithReady].
 type Config struct {
-	Link             string
 	Transport        string
 	Carrier          string
 	RoomURL          string
@@ -177,20 +175,19 @@ func (c *Client) bringUpLink(
 	cfg Config,
 	cancel context.CancelFunc,
 ) error {
-	ln, err := link.New(ctx, cfg.Link, link.Config{
-		Transport:        cfg.Transport,
-		Carrier:          cfg.Carrier,
-		RoomURL:          cfg.RoomURL,
-		Engine:           cfg.Engine,
-		URL:              cfg.URL,
-		Token:            cfg.Token,
-		ChannelID:        cfg.ChannelID,
-		DeviceID:         c.deviceID,
-		Name:             names.Generate(),
-		OnData:           c.onData,
-		DNSServer:        cfg.DNSServer,
-		TransportOptions: cfg.TransportOptions,
-		Traffic:          cfg.Traffic,
+	ln, err := transport.New(ctx, cfg.Transport, transport.Config{
+		Carrier:   cfg.Carrier,
+		RoomURL:   cfg.RoomURL,
+		Engine:    cfg.Engine,
+		URL:       cfg.URL,
+		Token:     cfg.Token,
+		ChannelID: cfg.ChannelID,
+		DeviceID:  c.deviceID,
+		Name:      names.Generate(),
+		OnData:    c.onData,
+		DNSServer: cfg.DNSServer,
+		Options:   cfg.TransportOptions,
+		Traffic:   cfg.Traffic,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create link: %w", err)
@@ -325,12 +322,8 @@ func smuxConfig(maxWirePayload ...int) *smux.Config {
 	return cfg
 }
 
-func linkMaxPayload(ln link.Link) int {
-	provider, ok := ln.(link.FeaturesProvider)
-	if !ok {
-		return 0
-	}
-	return provider.Features().MaxPayloadSize
+func linkMaxPayload(tr transport.Transport) int {
+	return tr.Features().MaxPayloadSize
 }
 
 func (c *Client) handleReconnect(ctx context.Context, cfg Config, cancel context.CancelFunc, reason string) bool {

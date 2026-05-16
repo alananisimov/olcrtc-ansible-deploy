@@ -141,7 +141,6 @@ func TestValidate(t *testing.T) {
 
 	base := Config{
 		Mode:      modeSRV,
-		Link:      "direct",
 		Transport: "datachannel",
 		Auth:      "telemost",
 		RoomID:    "room-1",
@@ -191,15 +190,6 @@ func TestValidate(t *testing.T) {
 				return cfg
 			}(),
 			want: ErrUnsupportedCarrier,
-		},
-		{
-			name: "unsupported link",
-			cfg: func() Config {
-				cfg := base
-				cfg.Link = "unknown"
-				return cfg
-			}(),
-			want: ErrUnsupportedLink,
 		},
 		{
 			name: "unsupported transport",

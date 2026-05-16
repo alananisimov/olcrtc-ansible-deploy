@@ -16,8 +16,6 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
-	"github.com/openlibrecommunity/olcrtc/internal/link/direct"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
@@ -72,13 +70,9 @@ var (
 	ErrURLRequired = errors.New("SFU URL required (set auth.url)")
 	// ErrUnsupportedCarrier indicates that carrier is not registered.
 	ErrUnsupportedCarrier = errors.New("unsupported carrier")
-	// ErrUnsupportedLink indicates that link is not registered.
-	ErrUnsupportedLink = errors.New("unsupported link")
 	// ErrUnsupportedTransport indicates that transport is not registered.
 	ErrUnsupportedTransport = errors.New("unsupported transport")
 
-	// ErrLinkRequired indicates that link is not provided.
-	ErrLinkRequired = errors.New("link required (set link to direct)")
 	// ErrTransportRequired indicates that transport is not provided.
 	ErrTransportRequired = errors.New(
 		"transport required (set transport to datachannel, videochannel, seichannel or vp8channel)")
@@ -154,7 +148,6 @@ var (
 // Config holds runtime session settings.
 type Config struct {
 	Mode                  string
-	Link                  string
 	Transport             string
 	Auth                  string
 	Engine                string
@@ -199,7 +192,6 @@ type Config struct {
 // RegisterDefaults registers built-in carriers and transports.
 func RegisterDefaults() {
 	builtin.Register()
-	link.Register("direct", direct.New)
 	transport.Register("datachannel", datachannel.New)
 	transport.Register("videochannel", videochannel.New)
 	transport.Register("seichannel", seichannel.New)
@@ -326,9 +318,6 @@ func Validate(cfg Config) error {
 	if err := validateAuth(cfg); err != nil {
 		return err
 	}
-	if err := validateLink(cfg); err != nil {
-		return err
-	}
 	if err := validateTransportRegistration(cfg); err != nil {
 		return err
 	}
@@ -365,16 +354,6 @@ func validateAuth(cfg Config) error {
 	}
 	if !slices.Contains(carrier.Available(), cfg.Auth) {
 		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, carrier.Available())
-	}
-	return nil
-}
-
-func validateLink(cfg Config) error {
-	if cfg.Link == "" {
-		return ErrLinkRequired
-	}
-	if !slices.Contains(link.Available(), cfg.Link) {
-		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedLink, cfg.Link, link.Available())
 	}
 	return nil
 }
@@ -641,7 +620,6 @@ func runOnce(
 	switch cfg.Mode {
 	case modeSRV:
 		if err := server.Run(ctx, server.Config{
-			Link:             cfg.Link,
 			Transport:        cfg.Transport,
 			Carrier:          cfg.Auth,
 			RoomURL:          roomURL,
@@ -671,7 +649,6 @@ func runOnce(
 		return nil
 	case modeCNC:
 		if err := client.Run(ctx, client.Config{
-			Link:             cfg.Link,
 			Transport:        cfg.Transport,
 			Carrier:          cfg.Auth,
 			RoomURL:          roomURL,

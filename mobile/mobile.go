@@ -50,7 +50,6 @@ var (
 )
 
 const (
-	defaultLink        = "direct"
 	defaultTransport   = "vp8channel"
 	dataTransport      = "datachannel"
 	defaultDNSServer   = "1.1.1.1:53"
@@ -80,7 +79,6 @@ var (
 )
 
 type mobileConfig struct {
-	link             string
 	transport        string
 	dnsServer        string
 	vp8FPS           int
@@ -121,15 +119,6 @@ func SetTransport(transport string) {
 	defer mu.Unlock()
 	ensureDefaultConfigLocked()
 	defaults.transport = normalizeTransport(transport)
-}
-
-// SetLink selects the link used by Start.
-// Supported value today: direct.
-func SetLink(link string) {
-	mu.Lock()
-	defer mu.Unlock()
-	ensureDefaultConfigLocked()
-	defaults.link = link
 }
 
 // SetDNS selects the DNS server used by the tunnel.
@@ -243,7 +232,6 @@ func Check(
 		doneCh <- runClientWithReady(
 			ctx,
 			client.Config{
-				Link:      defaultLink,
 				Transport: transportName,
 				Carrier:   carrierName,
 				RoomURL:   buildRoomURL(carrierName, roomID),
@@ -334,7 +322,6 @@ func Ping(
 		doneCh <- runClientWithReady(
 			ctx,
 			client.Config{
-				Link:      defaultLink,
 				Transport: transportName,
 				Carrier:   carrierName,
 				RoomURL:   buildRoomURL(carrierName, roomID),
@@ -582,7 +569,6 @@ func startWithConfig(
 		err := runClientWithReady(
 			ctx,
 			client.Config{
-				Link:      cfg.link,
 				Transport: cfg.transport,
 				Carrier:   carrierName,
 				RoomURL:   roomURL,
@@ -707,7 +693,6 @@ func waitForCheckDone(doneCh <-chan error) {
 func ensureDefaultConfigLocked() {
 	defaultsSet.Do(func() {
 		defaults = mobileConfig{
-			link:             defaultLink,
 			transport:        defaultTransport,
 			dnsServer:        defaultDNSServer,
 			vp8FPS:           60,

@@ -25,7 +25,6 @@ import (
 	authWBStream "github.com/openlibrecommunity/olcrtc/internal/auth/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
-	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
@@ -41,7 +40,6 @@ const (
 	transportVideo      = "videochannel"
 	transportSEI        = "seichannel"
 	transportVP8        = "vp8channel"
-	linkDirect          = "direct"
 	testRoom            = "room"
 	localDNSServer      = "127.0.0.1:53"
 	videoHWNone         = "none"
@@ -635,7 +633,6 @@ func requireRealRoom(ctx context.Context, t *testing.T, carrierName string) stri
 func validSessionConfig(mode, carrierName, transportName string) session.Config {
 	return session.Config{
 		Mode:            mode,
-		Link:            linkDirect,
 		Transport:       transportName,
 		Auth:            carrierName,
 		RoomID:          testRoom,
@@ -687,39 +684,15 @@ func e2eTransportOptions(transportName string) transport.Options {
 	return nil
 }
 
-func validLinkConfig(carrierName, transportName string) link.Config {
+func validTransportConfig(carrierName, transportName string) transport.Config {
 	cfg := validSessionConfig("cnc", carrierName, transportName)
-	var opts transport.Options
-	switch transportName {
-	case "videochannel":
-		opts = videochannel.Options{
-			Width:      cfg.VideoWidth,
-			Height:     cfg.VideoHeight,
-			FPS:        cfg.VideoFPS,
-			Bitrate:    cfg.VideoBitrate,
-			HW:         cfg.VideoHW,
-			Codec:      cfg.VideoCodec,
-			TileModule: cfg.VideoTileModule,
-			TileRS:     cfg.VideoTileRS,
-		}
-	case "vp8channel":
-		opts = vp8channel.Options{FPS: cfg.VP8FPS, BatchSize: cfg.VP8BatchSize}
-	case "seichannel":
-		opts = seichannel.Options{
-			FPS:          cfg.SEIFPS,
-			BatchSize:    cfg.SEIBatchSize,
-			FragmentSize: cfg.SEIFragmentSize,
-			AckTimeoutMS: cfg.SEIAckTimeoutMS,
-		}
-	}
-	return link.Config{
-		Transport:        cfg.Transport,
-		Carrier:          cfg.Auth,
-		RoomURL:          testRoom,
-		DeviceID:         "e2e-link-test",
-		Name:             "e2e-" + carrierName + "-" + transportName,
-		DNSServer:        cfg.DNSServer,
-		TransportOptions: opts,
+	return transport.Config{
+		Carrier:   cfg.Auth,
+		RoomURL:   testRoom,
+		DeviceID:  "e2e-link-test",
+		Name:      "e2e-" + carrierName + "-" + transportName,
+		DNSServer: cfg.DNSServer,
+		Options:   e2eTransportOptions(transportName),
 	}
 }
 
@@ -792,7 +765,6 @@ func startTunnel(t *testing.T) *tunnelRuntime {
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.Run(ctx, server.Config{
-			Link:      linkDirect,
 			Transport: transportData,
 			Carrier:   carrierName,
 			RoomURL:   testRoom,
@@ -806,7 +778,6 @@ func startTunnel(t *testing.T) *tunnelRuntime {
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(ctx, client.Config{
-			Link:      linkDirect,
 			Transport: transportData,
 			Carrier:   carrierName,
 			RoomURL:   testRoom,
@@ -845,7 +816,6 @@ func startRealTunnel(
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.Run(runCtx, server.Config{
-			Link:             linkDirect,
 			Transport:        transportName,
 			Carrier:          carrierName,
 			RoomURL:          roomURL,
@@ -870,7 +840,6 @@ func startRealTunnel(
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(runCtx, client.Config{
-			Link:             linkDirect,
 			Transport:        transportName,
 			Carrier:          carrierName,
 			RoomURL:          roomURL,
@@ -1029,7 +998,7 @@ func TestBuiltInProviderTransportMatrixValidates(t *testing.T) {
 	}
 }
 
-func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
+func TestTransportCreatesAllProviderTransportCombinations(t *testing.T) {
 	session.RegisterDefaults()
 
 	for _, carrierName := range builtInCarrierNames() {
@@ -1040,11 +1009,11 @@ func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
 		t.Run(carrierName, func(t *testing.T) {
 			for _, transportName := range builtInTransportNames() {
 				t.Run(transportName, func(t *testing.T) {
-					ln, err := link.New(context.Background(), linkDirect, validLinkConfig(carrierName, transportName))
+					tr, err := transport.New(context.Background(), transportName, validTransportConfig(carrierName, transportName))
 					if err != nil {
-						t.Fatalf("link.New() error = %v", err)
+						t.Fatalf("transport.New() error = %v", err)
 					}
-					if err := ln.Close(); err != nil {
+					if err := tr.Close(); err != nil {
 						t.Fatalf("Close() error = %v", err)
 					}
 				})
@@ -1053,7 +1022,7 @@ func TestDirectLinkCreatesAllProviderTransportCombinations(t *testing.T) {
 	}
 }
 
-func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
+func TestTransportConnectsFastProviderTransportMatrix(t *testing.T) {
 	session.RegisterDefaults()
 
 	for _, carrierName := range builtInCarrierNames() {
@@ -1064,15 +1033,15 @@ func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
 		t.Run(carrierName, func(t *testing.T) {
 			for _, transportName := range []string{transportData, transportSEI} {
 				t.Run(transportName, func(t *testing.T) {
-					ln, err := link.New(context.Background(), linkDirect, validLinkConfig(carrierName, transportName))
+					tr, err := transport.New(context.Background(), transportName, validTransportConfig(carrierName, transportName))
 					if err != nil {
-						t.Fatalf("link.New() error = %v", err)
+						t.Fatalf("transport.New() error = %v", err)
 					}
-					if err := ln.Connect(context.Background()); err != nil {
+					if err := tr.Connect(context.Background()); err != nil {
 						t.Fatalf("Connect() error = %v", err)
 					}
-					assertLinkCanSendAfterConnect(t, ln, transportName)
-					if err := ln.Close(); err != nil {
+					assertTransportCanSendAfterConnect(t, tr, transportName)
+					if err := tr.Close(); err != nil {
 						t.Fatalf("Close() error = %v", err)
 					}
 				})
@@ -1081,16 +1050,16 @@ func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
 	}
 }
 
-func assertLinkCanSendAfterConnect(t *testing.T, ln link.Link, transportName string) {
+func assertTransportCanSendAfterConnect(t *testing.T, tr transport.Transport, transportName string) {
 	t.Helper()
 
 	if transportName == transportSEI {
-		if ln.CanSend() {
+		if tr.CanSend() {
 			t.Fatal("CanSend() = true before peer seichannel frame")
 		}
 		return
 	}
-	if !ln.CanSend() {
+	if !tr.CanSend() {
 		t.Fatal("CanSend() = false, want true")
 	}
 }
@@ -1312,7 +1281,6 @@ func TestSupervisorFailoverProfilesReachWorkingSOCKS(t *testing.T) {
 func failoverSessionConfig(mode, carrierName, socksHost string, socksPort int) session.Config {
 	cfg := session.Config{
 		Mode:      mode,
-		Link:      linkDirect,
 		Transport: transportData,
 		Auth:      carrierName,
 		RoomID:    testRoom,
@@ -1328,7 +1296,6 @@ func failoverSessionConfig(mode, carrierName, socksHost string, socksPort int) s
 
 func clientConfigFromSession(cfg session.Config, socksAddr string) client.Config {
 	return client.Config{
-		Link:             cfg.Link,
 		Transport:        cfg.Transport,
 		Carrier:          cfg.Auth,
 		RoomURL:          cfg.RoomID,
