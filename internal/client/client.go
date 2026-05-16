@@ -4,7 +4,6 @@ package client
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
+	"github.com/openlibrecommunity/olcrtc/internal/runtime"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/xtaci/smux"
 )
@@ -33,7 +33,8 @@ var (
 	// ErrProxyAuth is returned when SOCKS proxy authentication fails.
 	ErrProxyAuth = errors.New("SOCKS proxy auth failed")
 	// ErrKeySize is returned when the encryption key is not 32 bytes.
-	ErrKeySize = errors.New("key must be 32 bytes")
+	// Re-exported from runtime for compatibility with errors.Is callers.
+	ErrKeySize = runtime.ErrKeySize
 	// ErrInvalidSOCKSVersion is returned when the SOCKS version is not 5.
 	ErrInvalidSOCKSVersion = errors.New("invalid socks version")
 	// ErrUnsupportedSOCKSCommand is returned for unsupported SOCKS commands.
@@ -58,9 +59,7 @@ type Client struct {
 	controlStop context.CancelFunc
 	sessMu      sync.RWMutex
 	reconnectMu sync.Mutex
-	healthMu    sync.RWMutex
-	health      control.Status
-	onHealth    HealthFunc
+	health      *runtime.HealthTracker
 	deviceID    string
 	sessionID   string
 	claims      map[string]any
@@ -134,7 +133,7 @@ func RunWithReady(ctx context.Context, cfg Config, onReady func()) error {
 		dnsServer: cfg.DNSServer,
 		socksUser: cfg.SOCKSUser,
 		socksPass: cfg.SOCKSPass,
-		onHealth:  cfg.OnHealth,
+		health:    runtime.NewHealthTracker(cfg.OnHealth),
 	}
 
 	// shutdown is registered BEFORE bringUpLink so we always close any
@@ -303,27 +302,12 @@ func resolveDeviceID(deviceID, path string) (string, error) {
 	return id, nil
 }
 
-// smuxConfig returns the tuned smux config used on both ends.
-func smuxConfig(maxWirePayload ...int) *smux.Config {
-	cfg := smux.DefaultConfig()
-	cfg.Version = 2
-	cfg.KeepAliveDisabled = true
-	cfg.MaxFrameSize = 32768
-	if len(maxWirePayload) > 0 && maxWirePayload[0] > crypto.WireOverhead {
-		maxFrameSize := maxWirePayload[0] - crypto.WireOverhead
-		if maxFrameSize < cfg.MaxFrameSize {
-			cfg.MaxFrameSize = maxFrameSize
-		}
-	}
-	cfg.MaxReceiveBuffer = 16 * 1024 * 1024
-	cfg.MaxStreamBuffer = 1024 * 1024
-	cfg.KeepAliveInterval = 10 * time.Second
-	cfg.KeepAliveTimeout = 60 * time.Second
-	return cfg
+func smuxConfig(maxWirePayload int) *smux.Config {
+	return runtime.SmuxConfig(maxWirePayload)
 }
 
 func linkMaxPayload(tr transport.Transport) int {
-	return tr.Features().MaxPayloadSize
+	return runtime.MaxPayload(tr)
 }
 
 func (c *Client) handleReconnect(ctx context.Context, cfg Config, cancel context.CancelFunc, reason string) bool {
@@ -481,61 +465,14 @@ func (c *Client) startControlLoop(
 
 // Status returns the latest client-side control health snapshot.
 func (c *Client) Status() control.Status {
-	c.healthMu.RLock()
-	defer c.healthMu.RUnlock()
-	return c.health
+	return c.health.Status()
 }
 
-func (c *Client) recordSession(sessionID string) {
-	c.healthMu.Lock()
-	c.health.SessionID = sessionID
-	c.health.MissedPongs = 0
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordPong(h control.Health) {
-	c.healthMu.Lock()
-	c.health.LastPong = h.LastSeen
-	c.health.LastRTT = h.RTT
-	c.health.MissedPongs = 0
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordMissed(missed int) {
-	c.healthMu.Lock()
-	c.health.MissedPongs = missed
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordUnhealthy(missed int) {
-	c.healthMu.Lock()
-	c.health.MissedPongs = missed
-	c.health.UnhealthyEvents++
-	c.health.LastUnhealthy = time.Now()
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) recordReconnect() {
-	c.healthMu.Lock()
-	c.health.Reconnects++
-	status := c.health
-	c.healthMu.Unlock()
-	c.notifyHealth(status)
-}
-
-func (c *Client) notifyHealth(status control.Status) {
-	if c.onHealth != nil {
-		c.onHealth(status)
-	}
-}
+func (c *Client) recordSession(sessionID string) { c.health.RecordSession(sessionID) }
+func (c *Client) recordPong(h control.Health)    { c.health.RecordPong(h) }
+func (c *Client) recordMissed(missed int)        { c.health.RecordMissed(missed) }
+func (c *Client) recordUnhealthy(missed int)     { c.health.RecordUnhealthy(missed) }
+func (c *Client) recordReconnect()               { c.health.RecordReconnect() }
 
 func (c *Client) shutdown() {
 	c.sessMu.Lock()
@@ -567,19 +504,7 @@ func (c *Client) shutdown() {
 }
 
 func setupCipher(keyHex string) (*crypto.Cipher, error) {
-	key, err := hex.DecodeString(keyHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode key: %w", err)
-	}
-	if len(key) != 32 {
-		return nil, fmt.Errorf("%w: got %d", ErrKeySize, len(key))
-	}
-
-	cipher, err := crypto.NewCipher(string(key))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
-	}
-	return cipher, nil
+	return runtime.SetupCipher(keyHex)
 }
 
 func (c *Client) onData(data []byte) {

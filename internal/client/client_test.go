@@ -14,6 +14,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	cryptopkg "github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
+	"github.com/openlibrecommunity/olcrtc/internal/runtime"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/xtaci/smux"
 )
@@ -46,9 +47,9 @@ func TestSetupCipherRejectsBadInput(t *testing.T) {
 }
 
 func TestSmuxConfig(t *testing.T) {
-	cfg := smuxConfig()
+	cfg := smuxConfig(0)
 	if cfg.Version != 2 || !cfg.KeepAliveDisabled || cfg.MaxFrameSize != 32768 || cfg.MaxReceiveBuffer != 16*1024*1024 {
-		t.Fatalf("smuxConfig() = %+v", cfg)
+		t.Fatalf("smuxConfig(0) = %+v", cfg)
 	}
 	capped := smuxConfig(4096)
 	if capped.MaxFrameSize != 4096-cryptopkg.WireOverhead {
@@ -403,12 +404,12 @@ func TestSendConnectRequestOverSmux(t *testing.T) {
 		_ = b.Close()
 	}()
 
-	serverSess, err := smux.Server(a, smuxConfig())
+	serverSess, err := smux.Server(a, smuxConfig(0))
 	if err != nil {
 		t.Fatalf("smux.Server() error = %v", err)
 	}
 	defer func() { _ = serverSess.Close() }()
-	clientSess, err := smux.Client(b, smuxConfig())
+	clientSess, err := smux.Client(b, smuxConfig(0))
 	if err != nil {
 		t.Fatalf("smux.Client() error = %v", err)
 	}
@@ -457,12 +458,12 @@ func TestSendConnectRequestRejectsBadAck(t *testing.T) {
 		_ = a.Close()
 		_ = b.Close()
 	}()
-	serverSess, err := smux.Server(a, smuxConfig())
+	serverSess, err := smux.Server(a, smuxConfig(0))
 	if err != nil {
 		t.Fatalf("smux.Server() error = %v", err)
 	}
 	defer func() { _ = serverSess.Close() }()
-	clientSess, err := smux.Client(b, smuxConfig())
+	clientSess, err := smux.Client(b, smuxConfig(0))
 	if err != nil {
 		t.Fatalf("smux.Client() error = %v", err)
 	}
@@ -534,12 +535,12 @@ func TestStartControlLoopReportsPong(t *testing.T) {
 		_ = b.Close()
 	}()
 
-	serverSess, err := smux.Server(a, smuxConfig())
+	serverSess, err := smux.Server(a, smuxConfig(0))
 	if err != nil {
 		t.Fatalf("smux.Server() error = %v", err)
 	}
 	defer func() { _ = serverSess.Close() }()
-	clientSess, err := smux.Client(b, smuxConfig())
+	clientSess, err := smux.Client(b, smuxConfig(0))
 	if err != nil {
 		t.Fatalf("smux.Client() error = %v", err)
 	}
@@ -562,7 +563,7 @@ func TestStartControlLoopReportsPong(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	got := make(chan control.Health, 1)
-	c := &Client{sessionID: "sid-control"}
+	c := &Client{sessionID: "sid-control", health: runtime.NewHealthTracker(nil)}
 	c.recordSession("sid-control")
 	c.startControlLoop(ctx, Config{
 		Liveness: control.Config{
@@ -604,7 +605,7 @@ func TestStartControlLoopReportsPong(t *testing.T) {
 
 func TestStatusRecordsReconnectAndUnhealthy(t *testing.T) {
 	updates := 0
-	c := &Client{onHealth: func(control.Status) { updates++ }}
+	c := &Client{health: runtime.NewHealthTracker(func(control.Status) { updates++ })}
 	c.recordSession("sid-1")
 	c.recordMissed(2)
 	c.recordUnhealthy(3)
