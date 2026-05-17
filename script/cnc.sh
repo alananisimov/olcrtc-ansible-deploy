@@ -123,7 +123,24 @@ echo "[*] Using transport: $TRANSPORT"
 echo ""
 
 if [ "$AUTH" = "jitsi" ]; then
-    read -p "Enter Jitsi room URL (https://host/room or host/room): " ROOM_ID
+    read -p "Jitsi base URL [default: https://meet.cryptopro.ru/]: " JITSI_BASE_INPUT
+    JITSI_BASE_URL=${JITSI_BASE_INPUT:-https://meet.cryptopro.ru/}
+    JITSI_BASE_URL="${JITSI_BASE_URL%/}"
+
+    read -p "Enter Jitsi room name or URL: " JITSI_ROOM_INPUT
+    if [ -z "$JITSI_ROOM_INPUT" ]; then
+        echo "[X] Jitsi room name/URL cannot be empty"
+        exit 1
+    fi
+
+    case "$JITSI_ROOM_INPUT" in
+        http://*|https://*|*/*)
+            ROOM_ID="$JITSI_ROOM_INPUT"
+            ;;
+        *)
+            ROOM_ID="$JITSI_BASE_URL/$JITSI_ROOM_INPUT"
+            ;;
+    esac
 else
     read -p "Enter Room ID: " ROOM_ID
 fi

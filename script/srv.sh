@@ -140,12 +140,41 @@ if [ "$CARRIER" = "jazz" ]; then
             echo "[*] Will generate room before starting server"
             ;;
     esac
+elif [ "$CARRIER" = "jitsi" ]; then
+    read -p "Jitsi base URL [default: https://meet.cryptopro.ru/]: " JITSI_BASE_INPUT
+    JITSI_BASE_URL=${JITSI_BASE_INPUT:-https://meet.cryptopro.ru/}
+    JITSI_BASE_URL="${JITSI_BASE_URL%/}"
+
+    echo "Room options:"
+    echo "  1) Auto-generate new room (recommended)"
+    echo "  2) Use specific room name or URL"
+    read -p "Enter choice [1-2, default: 1]: " ROOM_CHOICE
+
+    case "$ROOM_CHOICE" in
+        2)
+            read -p "Enter Jitsi room name or URL: " JITSI_ROOM_INPUT
+            if [ -z "$JITSI_ROOM_INPUT" ]; then
+                echo "[X] Jitsi room name/URL cannot be empty"
+                exit 1
+            fi
+
+            case "$JITSI_ROOM_INPUT" in
+                http://*|https://*|*/*)
+                    ROOM_ID="$JITSI_ROOM_INPUT"
+                    ;;
+                *)
+                    ROOM_ID="$JITSI_BASE_URL/$JITSI_ROOM_INPUT"
+                    ;;
+            esac
+            ;;
+        *)
+            JITSI_ROOM="olcrtc-$PODMAN_ID"
+            ROOM_ID="$JITSI_BASE_URL/$JITSI_ROOM"
+            echo "[*] Generated Jitsi room URL: $ROOM_ID"
+            ;;
+    esac
 else
-    if [ "$CARRIER" = "jitsi" ]; then
-        read -p "Enter Jitsi room URL (https://host/room or host/room): " ROOM_ID
-    else
-        read -p "Enter Room ID: " ROOM_ID
-    fi
+    read -p "Enter Room ID: " ROOM_ID
     if [ -z "$ROOM_ID" ]; then
         echo "[X] Room ID/URL cannot be empty"
         exit 1
