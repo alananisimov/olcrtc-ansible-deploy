@@ -23,6 +23,8 @@ import (
 var (
 	// ErrConfigNotFound is returned when a config file path is set but the file does not exist.
 	ErrConfigNotFound = errors.New("config file not found")
+	// ErrConfigInvalidUTF8 is returned when a config file is not valid UTF-8.
+	ErrConfigInvalidUTF8 = errors.New("config file is not valid UTF-8")
 	// ErrCryptoKeyConflict is returned when both inline and file-backed keys are configured.
 	ErrCryptoKeyConflict = errors.New("crypto.key and crypto.key_file cannot both be set")
 	// ErrCryptoKeyFileEmpty is returned when crypto.key_file points to an empty file.
@@ -178,7 +180,7 @@ func Load(path string) (File, error) {
 		return File{}, fmt.Errorf("read config %s: %w", path, err)
 	}
 	if !utf8.Valid(data) {
-		return File{}, fmt.Errorf("parse config %s: file is not valid UTF-8", path)
+		return File{}, fmt.Errorf("parse config %s: %w", path, ErrConfigInvalidUTF8)
 	}
 	var f File
 	if err := yaml.Unmarshal(data, &f); err != nil {

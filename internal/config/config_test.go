@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
@@ -329,7 +328,7 @@ func TestLoadInvalidUTF8(t *testing.T) {
 	}
 
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "file is not valid UTF-8") {
+	if !errors.Is(err, ErrConfigInvalidUTF8) {
 		t.Fatalf("Load() error = %v, want invalid UTF-8 error", err)
 	}
 }

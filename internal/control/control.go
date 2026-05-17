@@ -164,36 +164,50 @@ func (s *state) readLoop(ctx context.Context) error {
 	for {
 		raw, err := readFrame(s.rw)
 		if err != nil {
-			if ctx.Err() != nil {
-				return fmt.Errorf("read loop canceled: %w", ctx.Err())
-			}
-			return err
+			return readLoopErr(ctx, err)
 		}
 		msg, err := parseMessage(raw)
 		if err != nil {
 			return err
 		}
-		switch msg.Type {
-		case TypePing:
-			if err := s.enqueue(ctx, Message{
-				Version:      ProtoVersion,
-				Type:         TypePong,
-				Seq:          msg.Seq,
-				SentUnixNano: msg.SentUnixNano,
-			}); err != nil {
-				if ctx.Err() != nil {
-					return fmt.Errorf("read loop canceled: %w", ctx.Err())
-				}
-				return err
-			}
-		case TypePong:
-			s.handlePong(msg)
-		case TypeClose:
-			return ErrClosedByPeer
-		default:
-			return fmt.Errorf("%w: got %q", ErrUnexpectedMessage, msg.Type)
+		if err := s.handleReadMessage(ctx, msg); err != nil {
+			return err
 		}
 	}
+}
+
+func readLoopErr(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("read loop canceled: %w", ctx.Err())
+	}
+	return err
+}
+
+func (s *state) handleReadMessage(ctx context.Context, msg Message) error {
+	switch msg.Type {
+	case TypePing:
+		return s.enqueuePong(ctx, msg)
+	case TypePong:
+		s.handlePong(msg)
+		return nil
+	case TypeClose:
+		return ErrClosedByPeer
+	default:
+		return fmt.Errorf("%w: got %q", ErrUnexpectedMessage, msg.Type)
+	}
+}
+
+func (s *state) enqueuePong(ctx context.Context, ping Message) error {
+	err := s.enqueue(ctx, Message{
+		Version:      ProtoVersion,
+		Type:         TypePong,
+		Seq:          ping.Seq,
+		SentUnixNano: ping.SentUnixNano,
+	})
+	if err != nil {
+		return readLoopErr(ctx, err)
+	}
+	return nil
 }
 
 func (s *state) probeLoop(ctx context.Context) error {
