@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
@@ -318,5 +319,17 @@ func TestLoadMissing(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestLoadInvalidUTF8(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "olcrtc.yaml")
+	if err := os.WriteFile(path, []byte{'m', 'o', 'd', 'e', ':', ' ', 0xff}, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "file is not valid UTF-8") {
+		t.Fatalf("Load() error = %v, want invalid UTF-8 error", err)
 	}
 }

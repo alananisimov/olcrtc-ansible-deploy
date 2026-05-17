@@ -68,6 +68,16 @@ fi
 
 echo "[+] Using Podman"
 echo ""
+
+validate_key() {
+    case "$1" in
+        *[!0-9a-fA-F]*)
+            return 1
+            ;;
+    esac
+    [ "${#1}" -eq 64 ]
+}
+
 echo "Select carrier:"
 echo "  1) jitsi"
 echo "  2) telemost"
@@ -361,7 +371,12 @@ KEY_FILE="$HOME/.olcrtc_key"
 
 if [ -f "$KEY_FILE" ]; then
     echo "[*] Loading existing encryption key..."
-    KEY=$(cat "$KEY_FILE")
+    KEY=$(tr -d '[:space:]' < "$KEY_FILE")
+    if ! validate_key "$KEY"; then
+        echo "[X] Invalid encryption key in $KEY_FILE"
+        echo "    Remove the file to generate a new key, or replace it with 64 hex characters."
+        exit 1
+    fi
 else
     echo "[*] Generating new encryption key..."
     KEY=$(openssl rand -hex 32)

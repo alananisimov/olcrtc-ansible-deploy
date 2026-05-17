@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"gopkg.in/yaml.v3"
@@ -175,6 +176,9 @@ func Load(path string) (File, error) {
 			return File{}, fmt.Errorf("%w: %s", ErrConfigNotFound, path)
 		}
 		return File{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	if !utf8.Valid(data) {
+		return File{}, fmt.Errorf("parse config %s: file is not valid UTF-8", path)
 	}
 	var f File
 	if err := yaml.Unmarshal(data, &f); err != nil {

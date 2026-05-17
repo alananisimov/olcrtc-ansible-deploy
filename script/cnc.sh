@@ -72,6 +72,16 @@ fi
 
 echo "[+] Using Podman"
 echo ""
+
+validate_key() {
+    case "$1" in
+        *[!0-9a-fA-F]*)
+            return 1
+            ;;
+    esac
+    [ "${#1}" -eq 64 ]
+}
+
 echo "Select auth provider:"
 echo "  1) jitsi"
 echo "  2) telemost"
@@ -155,6 +165,11 @@ read -p "Enter Encryption Key (hex): " KEY
 
 if [ -z "$KEY" ]; then
     echo "[X] Encryption key cannot be empty"
+    exit 1
+fi
+
+if ! validate_key "$KEY"; then
+    echo "[X] Encryption key must be 64 hex characters"
     exit 1
 fi
 
