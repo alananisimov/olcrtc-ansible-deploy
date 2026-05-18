@@ -30,7 +30,7 @@ import (
 
 const (
 	defaultMaxPayloadSize = 60 * 1024
-	defaultConnectTimeout = 60 * time.Second
+	defaultConnectTimeout = 180 * time.Second
 	rtpBufSize            = 65536
 	outboundQueueSize     = 1024
 	inboundQueueSize      = 1024
@@ -89,6 +89,8 @@ type streamTransport struct {
 	outbound      chan []byte
 	closeCh       chan struct{}
 	writerDone    chan struct{}
+	peerSeen      chan struct{}
+	peerSeenOnce  sync.Once
 	closed        atomic.Bool
 	writerUp      atomic.Bool
 	writerOnce    sync.Once
@@ -169,6 +171,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		outbound:      make(chan []byte, outboundQueueSize),
 		closeCh:       make(chan struct{}),
 		writerDone:    make(chan struct{}),
+		peerSeen:      make(chan struct{}),
 		frameInterval: time.Second / time.Duration(fps),
 		batchSize:     batchSize,
 		bindingToken:  bindingToken(cfg.RoomURL),
@@ -212,7 +215,7 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 		go p.writerLoop()
 	})
 
-	return nil
+	return p.waitForPeer(connectCtx)
 }
 
 // epochHeader returns the 5-byte VP8-frame header used to tag every KCP
@@ -346,6 +349,20 @@ func (p *streamTransport) CanSend() bool {
 	p.kcpMu.RUnlock()
 	return hasKCP && p.stream.CanSend() &&
 		len(p.outbound) < cap(p.outbound)*canSendHighWatermark/100
+}
+
+func (p *streamTransport) waitForPeer(ctx context.Context) error {
+	if p.hadPeer.Load() {
+		return nil
+	}
+	select {
+	case <-p.peerSeen:
+		return nil
+	case <-p.closeCh:
+		return ErrTransportClosed
+	case <-ctx.Done():
+		return fmt.Errorf("wait peer: %w", ctx.Err())
+	}
 }
 
 // Features advertises reliable+ordered semantics now that KCP guarantees
@@ -530,6 +547,11 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 
 func (p *streamTransport) handleFirstPeer(peerEpoch uint32) {
 	p.peerEpoch.Store(peerEpoch)
+	p.peerSeenOnce.Do(func() {
+		if p.peerSeen != nil {
+			close(p.peerSeen)
+		}
+	})
 	logger.Infof("vp8channel: peer first seen epoch=0x%08x", peerEpoch)
 }
 

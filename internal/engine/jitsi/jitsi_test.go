@@ -39,6 +39,43 @@ func TestNormaliseHost(t *testing.T) {
 	}
 }
 
+func TestParseMeetConfigJSWithCustomMUC(t *testing.T) {
+	body := `
+config.hosts = {};
+config.hosts.domain = 'meet.jitsi';
+var subdomain = '';
+config.hosts.muc = 'muc.' + subdomain + 'meet.jitsi';
+config.websocket = 'wss://meet.playform.ru:443/' + subdir + 'xmpp-websocket';
+`
+	got := parseMeetConfigJS(body, meetConfig{
+		XMPPDomain:  "meet.playform.ru",
+		MUCDomain:   "conference.meet.playform.ru",
+		FocusDomain: "focus.meet.playform.ru",
+	})
+	if got.XMPPDomain != "meet.jitsi" || got.MUCDomain != "muc.meet.jitsi" ||
+		got.FocusDomain != "focus.meet.jitsi" {
+		t.Fatalf("parseMeetConfigJS = %+v, want meet.jitsi/muc.meet.jitsi/focus.meet.jitsi", got)
+	}
+}
+
+func TestParseMeetConfigJSWithDefaultHost(t *testing.T) {
+	body := `
+config.hosts = {
+    muc: 'conference.meet.cryptopro.ru',
+};
+config.websocket = 'wss://meet.cryptopro.ru/xmpp-websocket';
+`
+	got := parseMeetConfigJS(body, meetConfig{
+		XMPPDomain:  "meet.cryptopro.ru",
+		MUCDomain:   "conference.meet.cryptopro.ru",
+		FocusDomain: "focus.meet.cryptopro.ru",
+	})
+	if got.XMPPDomain != "meet.cryptopro.ru" || got.MUCDomain != "conference.meet.cryptopro.ru" ||
+		got.FocusDomain != "focus.meet.cryptopro.ru" {
+		t.Fatalf("parseMeetConfigJS = %+v", got)
+	}
+}
+
 func TestDecodeRaw(t *testing.T) {
 	const payload = "hello world"
 	encoded := encodeForTest(t, []byte(payload))

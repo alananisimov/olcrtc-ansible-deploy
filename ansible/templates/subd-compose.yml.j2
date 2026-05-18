@@ -1,0 +1,29 @@
+services:
+  olcrtc-subd:
+    image: alpine:3.22
+    container_name: olcrtc-subd
+    restart: unless-stopped
+    init: true
+    command:
+      - /app/olcrtc-subd
+      - -listen
+      - :8080
+      - -state
+      - /config/state.yaml
+    volumes:
+      - /opt/olcrtc-subd/bin/olcrtc-subd:/app/olcrtc-subd:ro
+      - /opt/olcrtc-subd/state.yaml:/config/state.yaml:ro
+    networks:
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik
+      traefik.http.routers.olcrtc-subd.rule: "Host(`{{ olcrtc_subd_host }}`)"
+      traefik.http.routers.olcrtc-subd.entrypoints: web-secure
+      traefik.http.routers.olcrtc-subd.tls: "true"
+      traefik.http.routers.olcrtc-subd.tls.certResolver: default
+      traefik.http.services.olcrtc-subd.loadbalancer.server.port: "8080"
+
+networks:
+  traefik:
+    external: true

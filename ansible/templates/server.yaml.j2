@@ -1,0 +1,32 @@
+mode: srv
+link: direct
+
+auth:
+  provider: "{{ item.auth }}"
+
+room:
+  id: "{{ item.room_id }}"
+
+crypto:
+  key: "{{ item.key }}"
+
+net:
+  transport: "{{ item.transport }}"
+  dns: "{{ item.dns | default('1.1.1.1:53') }}"
+
+liveness:
+  interval: 10s
+  timeout: 5s
+  failures: 3
+
+lifecycle:
+  max_session_duration: 6h
+
+data: /opt/olcrtc/data
+debug: false
+
+{% if item.vp8 is defined and item.vp8 %}
+vp8:
+  fps: {{ item.vp8.fps }}
+  batch_size: {{ item.vp8.batch_size }}
+{% endif %}

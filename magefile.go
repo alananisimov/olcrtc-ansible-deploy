@@ -29,7 +29,7 @@ var (
 
 // Build builds the olcrtc CLI binary.
 func Build() error {
-	mg.Deps(BuildCLI)
+	mg.Deps(BuildCLI, BuildSubd, BuildProvision)
 	return nil
 }
 
@@ -37,6 +37,18 @@ func Build() error {
 func BuildCLI() error {
 	mg.Deps(Deps)
 	return buildBinary("olcrtc", "./cmd/olcrtc", goos, goarch)
+}
+
+// BuildSubd builds the subscription HTTP backend.
+func BuildSubd() error {
+	mg.Deps(Deps)
+	return buildBinary("olcrtc-subd", "./cmd/olcrtc-subd", goos, goarch)
+}
+
+// BuildProvision builds the local provisioning generator.
+func BuildProvision() error {
+	mg.Deps(Deps)
+	return buildBinary("olcrtc-provision", "./cmd/olcrtc-provision", goos, goarch)
 }
 
 // Cross builds olcrtc for all supported platforms.

@@ -1,0 +1,66 @@
+version: 1
+public_base_url: https://olcrtc.example.com
+name: olcrtc-demo
+refresh: 10m
+
+locations:
+  - id: node1
+    name: Node 1
+    host: node1.example.com
+    color: "#4A90E2"
+  - id: de
+    name: Location DE
+    host: de.example.com
+    color: "#2EBD85"
+  - id: nl
+    name: Location NL
+    host: nl.example.com
+    color: "#F5A623"
+
+carriers:
+  - id: telemost
+    name: Telemost
+    provider: telemost
+    transport: vp8channel
+    color: "#4A90E2"
+    comment: Telemost VP8
+    vp8:
+      fps: 60
+      batch_size: 64
+
+  - id: jitsi1
+    name: Jitsi 1
+    provider: jitsi
+    transport: datachannel
+    jitsi_base_url: https://jitsi1.example.com
+    color: "#2EBD85"
+    comment: Jitsi datachannel
+
+  - id: jitsi2
+    name: Jitsi 2
+    provider: jitsi
+    transport: datachannel
+    jitsi_base_url: https://jitsi2.example.com
+    color: "#7B61FF"
+    comment: Jitsi datachannel
+
+  - id: jitsi3-backup
+    name: Jitsi 3 Backup
+    provider: jitsi
+    transport: datachannel
+    jitsi_base_url: https://jitsi3-backup.example.com
+    color: "#D0021B"
+    comment: Jitsi backup datachannel
+
+# Add users here, then run:
+#   go run ./cmd/olcrtc-provision -config deploy/olcrtc/desired.yaml -state deploy/olcrtc/state.yaml
+#
+# Example:
+users:
+  - id: user1
+    name: Example User 1
+  - id: user2
+    name: Example User 2
+
+telemost_rooms:
+  - "10000000000001"

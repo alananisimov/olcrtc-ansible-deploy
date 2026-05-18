@@ -90,10 +90,10 @@ func (s *fakeEngineSession) SetEndedCallback(cb func(string))  { s.stream.SetEnd
 func (s *fakeEngineSession) WatchConnection(ctx context.Context) {
 	s.stream.WatchConnection(ctx)
 }
-func (s *fakeEngineSession) CanSend() bool                            { return s.stream.CanSend() }
-func (s *fakeEngineSession) GetSendQueue() chan []byte                { return nil }
-func (s *fakeEngineSession) GetBufferedAmount() uint64                { return 0 }
-func (s *fakeEngineSession) AddVideoTrack(t webrtc.TrackLocal) error  { return s.stream.AddTrack(t) }
+func (s *fakeEngineSession) CanSend() bool                           { return s.stream.CanSend() }
+func (s *fakeEngineSession) GetSendQueue() chan []byte               { return nil }
+func (s *fakeEngineSession) GetBufferedAmount() uint64               { return 0 }
+func (s *fakeEngineSession) AddVideoTrack(t webrtc.TrackLocal) error { return s.stream.AddTrack(t) }
 func (s *fakeEngineSession) SetVideoTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
 	s.stream.SetTrackHandler(cb)
 }
@@ -121,8 +121,34 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 	if !stream.trackAdded || stream.trackCB == nil {
 		t.Fatal("New() did not attach track and handler")
 	}
-	if err := tr.Connect(context.Background()); err != nil {
-		t.Fatalf("Connect() error = %v", err)
+	peerEpoch := uint32(0x200)
+	firstFrame := make([]byte, epochHdrLen+4)
+	copy(firstFrame, vp8Keepalive)
+	binary.BigEndian.PutUint32(firstFrame[tokenOff:epochOff], tr.bindingToken)
+	binary.BigEndian.PutUint32(firstFrame[epochOff:crcOff], peerEpoch)
+	binary.BigEndian.PutUint32(firstFrame[crcOff:epochHdrLen], epochCRC(tr.bindingToken, peerEpoch))
+	copy(firstFrame[epochHdrLen:], []byte("data"))
+
+	done := make(chan error, 1)
+	go func() { done <- tr.Connect(context.Background()) }()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		tr.kcpMu.RLock()
+		kcpReady := tr.kcp != nil
+		tr.kcpMu.RUnlock()
+		if kcpReady && tr.writerUp.Load() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	tr.handleIncomingFrame(firstFrame)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Connect() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Connect() did not return after first peer frame")
 	}
 	if tr.kcp == nil || !tr.writerUp.Load() {
 		t.Fatal("Connect() should eagerly initialize kcp and writer")
@@ -135,14 +161,6 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 		t.Fatal("callbacks/watch were not forwarded")
 	}
 
-	peerEpoch := uint32(0x200)
-	firstFrame := make([]byte, epochHdrLen+4)
-	copy(firstFrame, vp8Keepalive)
-	binary.BigEndian.PutUint32(firstFrame[tokenOff:epochOff], tr.bindingToken)
-	binary.BigEndian.PutUint32(firstFrame[epochOff:crcOff], peerEpoch)
-	binary.BigEndian.PutUint32(firstFrame[crcOff:epochHdrLen], epochCRC(tr.bindingToken, peerEpoch))
-	copy(firstFrame[epochHdrLen:], []byte("data"))
-	tr.handleIncomingFrame(firstFrame)
 	if tr.kcp == nil {
 		t.Fatal("kcp not initialized after first peer frame")
 	}

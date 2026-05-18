@@ -24,6 +24,9 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,11 +47,14 @@ const (
 	// transport in olcrtc already uses 12 KiB chunks, well under this limit.
 	bridgeMaxMessageSize = 16 * 1024
 	bridgeOpenTimeout    = 30 * time.Second
+	joinAttemptTimeout   = 75 * time.Second
+	joinRetryDelay       = 2 * time.Second
 	defaultNick          = "olcrtc"
 	credentialKeyRoom    = "room"
 	videoTrackName       = "videochannel"
 	maxReconnects        = 5
 	reconnectWindow      = 5 * time.Minute
+	configFetchTimeout   = 5 * time.Second
 )
 
 // bridgeMagic tags every EndpointMessage produced by this engine. JVB broadcasts
@@ -277,7 +283,7 @@ func (s *Session) Connect(ctx context.Context) error {
 		return ErrSessionClosed
 	}
 
-	jSess, err := s.joinAndOpenBridge(ctx)
+	jSess, err := s.joinAndOpenBridgeWithRetry(ctx)
 	if err != nil {
 		return err
 	}
@@ -289,13 +295,52 @@ func (s *Session) Connect(ctx context.Context) error {
 	return nil
 }
 
+func (s *Session) joinAndOpenBridgeWithRetry(ctx context.Context) (*j.Session, error) {
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		if ctx.Err() != nil {
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, ctx.Err()
+		}
+
+		attemptCtx, cancel := context.WithTimeout(ctx, joinAttemptTimeout)
+		jSess, err := s.joinAndOpenBridge(attemptCtx)
+		cancel()
+		if err == nil {
+			return jSess, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return nil, err
+		}
+
+		logger.Warnf("jitsi: join/open attempt=%d failed: %v; retrying in %s", attempt, err, joinRetryDelay)
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(joinRetryDelay):
+		}
+	}
+}
+
 func (s *Session) joinAndOpenBridge(ctx context.Context) (*j.Session, error) {
+	meetConfig := resolveMeetConfig(ctx, s.host)
 	logger.Infof("jitsi: joining %s/%s as %s …", s.host, s.room, s.name)
+	if meetConfig.XMPPDomain != s.host || meetConfig.MUCDomain != "conference."+s.host ||
+		meetConfig.FocusDomain != "focus."+s.host {
+		logger.Infof("jitsi: using xmpp_domain=%s muc_domain=%s focus_domain=%s for %s",
+			meetConfig.XMPPDomain, meetConfig.MUCDomain, meetConfig.FocusDomain, s.host)
+	}
 	jSess, err := j.Join(ctx, j.Config{
-		Host:  s.host,
-		Room:  s.room,
-		Nick:  s.name,
-		Debug: logger.IsVerbose(),
+		Host:        s.host,
+		XMPPDomain:  meetConfig.XMPPDomain,
+		MUCDomain:   meetConfig.MUCDomain,
+		FocusDomain: meetConfig.FocusDomain,
+		Room:        s.room,
+		Nick:        s.name,
+		Debug:       logger.IsVerbose(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("jitsi join: %w", err)
@@ -326,6 +371,102 @@ func (s *Session) joinAndOpenBridge(ctx context.Context) (*j.Session, error) {
 	}
 
 	return jSess, nil
+}
+
+type meetConfig struct {
+	XMPPDomain  string
+	MUCDomain   string
+	FocusDomain string
+}
+
+func resolveMeetConfig(ctx context.Context, host string) meetConfig {
+	fallback := meetConfig{
+		XMPPDomain:  host,
+		MUCDomain:   "conference." + host,
+		FocusDomain: "",
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, configFetchTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, "https://"+host+"/config.js", nil)
+	if err != nil {
+		return fallback
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fallback
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fallback
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return fallback
+	}
+	return parseMeetConfigJS(string(body), fallback)
+}
+
+func parseMeetConfigJS(body string, fallback meetConfig) meetConfig {
+	cfg := fallback
+	focusConfigured := false
+
+	if match := regexp.MustCompile(`config\.hosts\.domain\s*=\s*['"]([^'"]+)['"]`).FindStringSubmatch(body); len(match) == 2 {
+		cfg.XMPPDomain = strings.TrimSpace(match[1])
+	}
+
+	quoted := regexp.MustCompile(`['"]([^'"]+)['"]`)
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "muc") {
+			continue
+		}
+		if !strings.Contains(line, "hosts.muc") && !strings.Contains(line, "muc:") {
+			continue
+		}
+		matches := quoted.FindAllStringSubmatch(line, -1)
+		if len(matches) == 0 {
+			continue
+		}
+		var muc strings.Builder
+		for _, match := range matches {
+			if len(match) == 2 {
+				muc.WriteString(match[1])
+			}
+		}
+		if value := strings.TrimSpace(muc.String()); strings.Contains(value, ".") {
+			cfg.MUCDomain = value
+			break
+		}
+	}
+
+	if match := regexp.MustCompile(`config\.hosts\.focus\s*=\s*['"]([^'"]+)['"]`).FindStringSubmatch(body); len(match) == 2 {
+		cfg.FocusDomain = strings.TrimSpace(match[1])
+		focusConfigured = true
+	}
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "focus:") {
+			continue
+		}
+		matches := quoted.FindAllStringSubmatch(line, -1)
+		if len(matches) == 0 {
+			continue
+		}
+		if value := strings.TrimSpace(matches[0][1]); strings.Contains(value, ".") {
+			cfg.FocusDomain = value
+			focusConfigured = true
+			break
+		}
+	}
+
+	if cfg.MUCDomain == "" && cfg.XMPPDomain != "" {
+		cfg.MUCDomain = "conference." + cfg.XMPPDomain
+	}
+	if !focusConfigured && cfg.XMPPDomain != "" {
+		cfg.FocusDomain = "focus." + cfg.XMPPDomain
+	}
+	return cfg
 }
 
 func (s *Session) shouldNegotiatePC() bool {

@@ -93,3 +93,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+replace github.com/zarazaex69/j => ./third_party/j

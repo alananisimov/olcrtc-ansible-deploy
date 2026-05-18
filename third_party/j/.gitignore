@@ -1,6 +1,5 @@
 # Prerequisites
 *.d
-.DS_Store
 
 # Object files
 *.o
@@ -12,11 +11,10 @@
 *.ilk
 *.map
 *.exp
-CLAUDE.md
+
 # Precompiled Headers
 *.gch
 *.pch
-research
 
 # Libraries
 *.lib
@@ -51,7 +49,6 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
-__pycache__
 
 # debug information files
 *.dwo
@@ -244,14 +241,3 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-build/
-GEMINI.md
-code/package-lock.json
-!cmd/olcrtc/
-!cmd/olcrtc/main_test.go
-!pkg/
-
-config.yaml
-inventory.yml
-desired.yaml
-olcrtc

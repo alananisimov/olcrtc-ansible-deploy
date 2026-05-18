@@ -1,0 +1,18 @@
+[Unit]
+Description=olcrtc managed srv instance %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=olcrtc
+Group=olcrtc
+WorkingDirectory=/opt/olcrtc
+ExecStart=/opt/olcrtc/bin/olcrtc /etc/olcrtc/servers/%i.yaml
+Restart=always
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+[Install]
+WantedBy=multi-user.target

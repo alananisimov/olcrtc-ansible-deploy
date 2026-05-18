@@ -1,0 +1,197 @@
+- name: Deploy olcrtc srv instances
+  hosts: olcrtc_srv
+  become: true
+  vars:
+    olcrtc_state_path: "{{ playbook_dir }}/../deploy/olcrtc/state.yaml"
+    olcrtc_bin_local: "{{ playbook_dir }}/../build/olcrtc-linux-amd64"
+    olcrtc_state: "{{ lookup('file', olcrtc_state_path) | from_yaml }}"
+    olcrtc_all_entries: "{{ olcrtc_state.entries | default([]) }}"
+    server_entries: "{{ olcrtc_all_entries | selectattr('location_id', 'equalto', olcrtc_location_id) | list }}"
+    server_entry_ids: "{{ server_entries | map(attribute='id') | list }}"
+    legacy_units:
+      - olcrtc-manager.service
+      - olcrtc@telemost.service
+      - olcrtc@jazz.service
+      - olcrtc@wb_stream.service
+
+  tasks:
+    - name: Validate generated state
+      ansible.builtin.assert:
+        that:
+          - olcrtc_state.version | int == 1
+          - olcrtc_location_id is defined
+
+    - name: Disable legacy olcrtc units on selected hosts
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: "{{ legacy_units }}"
+      failed_when: false
+      when: olcrtc_cleanup_legacy | default(false) | bool
+
+    - name: Create olcrtc group
+      ansible.builtin.group:
+        name: olcrtc
+        system: true
+
+    - name: Create olcrtc user
+      ansible.builtin.user:
+        name: olcrtc
+        group: olcrtc
+        system: true
+        create_home: false
+        home: /opt/olcrtc
+        shell: /usr/sbin/nologin
+
+    - name: Create olcrtc directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /opt/olcrtc/bin, owner: root, group: root, mode: "0755" }
+        - { path: /opt/olcrtc/data, owner: root, group: root, mode: "0755" }
+        - { path: /etc/olcrtc/servers, owner: root, group: olcrtc, mode: "0750" }
+
+    - name: Install olcrtc binary
+      ansible.builtin.copy:
+        src: "{{ olcrtc_bin_local }}"
+        dest: /opt/olcrtc/bin/olcrtc
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install olcrtc data files
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../data/"
+        dest: /opt/olcrtc/data/
+        owner: root
+        group: root
+        mode: preserve
+
+    - name: Install olcrtc srv systemd unit
+      ansible.builtin.template:
+        src: templates/olcrtc-srv.service.j2
+        dest: /etc/systemd/system/olcrtc-srv@.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Render managed srv configs for this location
+      ansible.builtin.template:
+        src: templates/server.yaml.j2
+        dest: "/etc/olcrtc/servers/{{ item.id }}.yaml"
+        owner: root
+        group: olcrtc
+        mode: "0640"
+      loop: "{{ server_entries }}"
+
+    - name: Find existing managed srv configs
+      ansible.builtin.find:
+        paths: /etc/olcrtc/servers
+        patterns: "*.yaml"
+        file_type: file
+      register: existing_srv_configs
+
+    - name: Stop stale managed srv instances
+      ansible.builtin.systemd_service:
+        name: "olcrtc-srv@{{ item.path | basename | regex_replace('\\.yaml$', '') }}.service"
+        state: stopped
+        enabled: false
+      loop: "{{ existing_srv_configs.files }}"
+      when: (item.path | basename | regex_replace('\\.yaml$', '')) not in server_entry_ids
+      failed_when: false
+
+    - name: Remove stale managed srv configs
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ existing_srv_configs.files }}"
+      when: (item.path | basename | regex_replace('\\.yaml$', '')) not in server_entry_ids
+
+    - name: Start managed srv instances
+      ansible.builtin.systemd_service:
+        name: "olcrtc-srv@{{ item.id }}.service"
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      loop: "{{ server_entries }}"
+
+- name: Deploy olcrtc subscription backend
+  hosts: olcrtc_sub
+  become: true
+  vars:
+    olcrtc_state_path: "{{ playbook_dir }}/../deploy/olcrtc/state.yaml"
+    olcrtc_subd_bin_local: "{{ playbook_dir }}/../build/olcrtc-subd-linux-amd64"
+    olcrtc_state: "{{ lookup('file', olcrtc_state_path) | from_yaml }}"
+    olcrtc_subd_host: "{{ (olcrtc_state.public_base_url | regex_replace('^https?://', '') | regex_replace('/.*$', '')) }}"
+
+  tasks:
+    - name: Validate generated state
+      ansible.builtin.assert:
+        that:
+          - olcrtc_state.version | int == 1
+          - olcrtc_subd_host | length > 0
+
+    - name: Create olcrtc-subd directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /opt/olcrtc-subd
+        - /opt/olcrtc-subd/bin
+
+    - name: Install olcrtc-subd binary
+      ansible.builtin.copy:
+        src: "{{ olcrtc_subd_bin_local }}"
+        dest: /opt/olcrtc-subd/bin/olcrtc-subd
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install generated subscription state
+      ansible.builtin.copy:
+        src: "{{ olcrtc_state_path }}"
+        dest: /opt/olcrtc-subd/state.yaml
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Render olcrtc-subd compose file
+      ansible.builtin.template:
+        src: templates/subd-compose.yml.j2
+        dest: /opt/olcrtc-subd/compose.yml
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Start olcrtc-subd compose stack
+      ansible.builtin.command:
+        cmd: docker compose -f /opt/olcrtc-subd/compose.yml up -d --force-recreate
+      changed_when: true
+
+    - name: Route olcrtc subscription SNI to Traefik in HAProxy
+      ansible.builtin.lineinfile:
+        path: /etc/haproxy/haproxy.cfg
+        insertafter: 'use_backend traefik_backend if \{ req_ssl_sni -i sub\.gothex\.xyz \}'
+        line: "    use_backend traefik_backend if { req_ssl_sni -i {{ olcrtc_subd_host }} }"
+        owner: root
+        group: root
+        mode: "0644"
+      register: haproxy_sni_route
+
+    - name: Reload HAProxy after SNI route change
+      ansible.builtin.systemd_service:
+        name: haproxy.service
+        state: reloaded
+      when: haproxy_sni_route.changed
