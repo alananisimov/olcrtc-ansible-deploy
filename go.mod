@@ -18,6 +18,7 @@ require (
 	github.com/zarazaex69/j v0.0.0-20260516013155-bffcfe38e7d9
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
+	golang.org/x/sys v0.43.0
 	google.golang.org/genproto v0.0.0-20260209200024-4cfbd4190f57
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -82,7 +83,6 @@ require (
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
