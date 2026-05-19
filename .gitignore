@@ -255,3 +255,4 @@ config.yaml
 inventory.yml
 desired.yaml
 olcrtc
+state.yaml
