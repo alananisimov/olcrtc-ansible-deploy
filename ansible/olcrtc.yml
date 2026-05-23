@@ -4,6 +4,7 @@
   vars:
     olcrtc_state_path: "{{ playbook_dir }}/../deploy/olcrtc/state.yaml"
     olcrtc_bin_local: "{{ playbook_dir }}/../build/olcrtc-linux-amd64"
+    olcrtc_data_local: "{{ playbook_dir }}/../olcrtc/data"
     olcrtc_state: "{{ lookup('file', olcrtc_state_path) | from_yaml }}"
     olcrtc_all_entries: "{{ olcrtc_state.entries | default([]) }}"
     server_entries: "{{ olcrtc_all_entries | selectattr('location_id', 'equalto', olcrtc_location_id) | list }}"
@@ -66,7 +67,7 @@
 
     - name: Install olcrtc data files
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../data/"
+        src: "{{ olcrtc_data_local }}/"
         dest: /opt/olcrtc/data/
         owner: root
         group: root
