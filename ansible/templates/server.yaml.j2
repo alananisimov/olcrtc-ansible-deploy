@@ -5,7 +5,11 @@ auth:
   provider: "{{ item.auth }}"
 
 room:
+{% if item.auth == "telemost" and not (item.room_id is match("^https://")) %}
+  id: "https://telemost.yandex.ru/j/{{ item.room_id }}"
+{% else %}
   id: "{{ item.room_id }}"
+{% endif %}
 
 crypto:
   key: "{{ item.key }}"
